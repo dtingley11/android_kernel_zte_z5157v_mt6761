@@ -47,6 +47,11 @@ fi
 
 hook_objects=(fs/exec.o fs/open.o fs/stat.o fs/read_write.o fs/namespace.o
     drivers/input/input.o)
+if grep -qx 'CONFIG_KSU_SUSFS=y' "$out_dir/.config"; then
+    hook_objects+=(fs/susfs.o fs/dcache.o fs/namei.o fs/notify/fdinfo.o
+        fs/proc/cmdline.o fs/proc/fd.o fs/proc/task_mmu.o fs/proc_namespace.o
+        fs/readdir.o fs/statfs.o kernel/kallsyms.o kernel/sys.o)
+fi
 make "${make_args[@]}" -j"${JOBS:-$(nproc)}" KernelSU-Next/kernel/ "${hook_objects[@]}"
 
 link_inputs=("$out_dir/KernelSU-Next/kernel/kernelsu.o")
@@ -55,8 +60,8 @@ for object in "${hook_objects[@]}"; do
 done
 "${CROSS_COMPILE}ld" -r -o "$out_dir/ksu-hook-linkcheck.o" "${link_inputs[@]}"
 "${CROSS_COMPILE}nm" -u "$out_dir/ksu-hook-linkcheck.o" > "$out_dir/ksu-hook-undefined.txt"
-if grep -Eq '[[:space:]](ksu_|kernelsu_)' "$out_dir/ksu-hook-undefined.txt"; then
-    echo "Unresolved KernelSU hook symbols; see $out_dir/ksu-hook-undefined.txt" >&2
+if grep -Eq '[[:space:]](ksu_|kernelsu_|susfs_)' "$out_dir/ksu-hook-undefined.txt"; then
+    echo "Unresolved KernelSU/SUSFS hook symbols; see $out_dir/ksu-hook-undefined.txt" >&2
     exit 1
 fi
 "${CROSS_COMPILE}nm" "$out_dir/KernelSU-Next/kernel/kernelsu.o" > "$out_dir/ksu-symbols.txt"
@@ -66,7 +71,7 @@ if grep -Eq '[[:space:]](register_kprobe|register_kretprobe|unregister_kprobe|un
     exit 1
 fi
 
-echo "KernelSU and source-hook objects compiled and linked together without unresolved KernelSU hooks."
+echo "KernelSU and source-hook objects compiled and linked together without unresolved KernelSU/SUSFS hooks."
 if [[ "$mode" == image ]]; then
     case "$build_arch" in
         arm) image_target=zImage ;;
