@@ -76,6 +76,9 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 #if defined(ZTE_MANGO_LCETRON_ILI9881P_720P_5P45_PANDA)
        &zte_mango_lcetron_ili9881p_720p_5p45_panda_lcm_drv,
 #endif
+#if defined(ZTE_MANGO_ZHONGGUANGDIAN_ER68577_720P_5P45_BOE)
+	&zte_mango_zhongguangdian_er68577_720p_5p45_boe_lcm_drv,
+#endif
 #if defined(ZTE_HOLITECH_ST7703_720P_5P45_HUAJIACAI)
        &zte_holitech_st7703_720p_5p45_huajiacai_lcm_drv,
 #endif

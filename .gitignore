@@ -118,3 +118,12 @@ all.config
 
 # fetched Android config fragments
 kernel/configs/android-*.cfg
+
+# Kernel build automation
+!/.github/
+!/.github/workflows/
+!/.github/workflows/*.yml
+!/ci/patches/
+!/ci/patches/*.patch
+
+/ci/__pycache__/

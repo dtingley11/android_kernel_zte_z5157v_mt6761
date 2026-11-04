@@ -1,0 +1,65 @@
+name: Z5157V kernel builds
+
+on:
+  push:
+    branches: [main, ksu_added]
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Stock kernel branch, tag or commit
+        required: true
+        default: main
+        type: string
+      ksu_ref:
+        description: KernelSU Next branch, tag or commit
+        required: true
+        default: legacy
+        type: string
+      anykernel_ref:
+        description: AnyKernel3 branch, tag or commit
+        required: true
+        default: master
+        type: string
+      susfs_ref:
+        description: SUSFS Linux 4.9 branch, tag or commit
+        required: true
+        default: kernel-4.9-v2
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: z5157v-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  stock:
+    name: Stock
+    uses: ./.github/workflows/kernel-variant.yml
+    with:
+      variant: stock
+      kernel_ref: ${{ inputs.kernel_ref || 'main' }}
+      anykernel_ref: ${{ inputs.anykernel_ref || 'master' }}
+
+  ksu:
+    name: KernelSU Next
+    needs: stock
+    uses: ./.github/workflows/kernel-variant.yml
+    with:
+      variant: ksu
+      kernel_ref: ${{ needs.stock.outputs.kernel_revision }}
+      anykernel_ref: ${{ inputs.anykernel_ref || 'master' }}
+      ksu_ref: ${{ inputs.ksu_ref || 'legacy' }}
+
+  ksu-susfs:
+    name: KernelSU Next and SUSFS
+    needs: [stock, ksu]
+    if: ${{ !cancelled() && needs.stock.result == 'success' }}
+    uses: ./.github/workflows/kernel-variant.yml
+    with:
+      variant: ksu-susfs
+      kernel_ref: ${{ needs.stock.outputs.kernel_revision }}
+      anykernel_ref: ${{ inputs.anykernel_ref || 'master' }}
+      ksu_ref: ${{ inputs.ksu_ref || 'legacy' }}
+      susfs_ref: ${{ inputs.susfs_ref || 'kernel-4.9-v2' }}
