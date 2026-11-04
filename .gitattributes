@@ -1,2 +1,5 @@
 *.c   diff=cpp
 *.h   diff=cpp
+
+# Preserve literal diff context in integration patches.
+ci/patches/*.patch -whitespace

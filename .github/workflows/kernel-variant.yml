@@ -1,0 +1,63 @@
+name: Build kernel variant
+
+on:
+  workflow_call:
+    inputs:
+      variant:
+        required: true
+        type: string
+      ksu_ref:
+        default: legacy
+        type: string
+      susfs_ref:
+        default: kernel-4.9-v2
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VARIANT: ${{ inputs.variant }}
+      KSU_REF: ${{ inputs.ksu_ref }}
+      SUSFS_REF: ${{ inputs.susfs_ref }}
+    steps:
+      - name: Set build directory
+        run: echo "BUILD_WORK=$RUNNER_TEMP/z5157v-$VARIANT" >> "$GITHUB_ENV"
+
+      - name: Check out device kernel
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare sources and apply patches
+        run: >-
+          python3 ci/build.py prepare --variant "$VARIANT" --work "$BUILD_WORK"
+          --ksu-ref "$KSU_REF" --susfs-ref "$SUSFS_REF"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex libelf-dev libssl-dev libncurses-dev python-is-python3
+
+      - name: Build kernel and modules
+        run: python3 ci/build.py build --variant "$VARIANT" --work "$BUILD_WORK"
+
+      - name: Write build summary
+        if: ${{ always() }}
+        env:
+          CI_JOB_STATUS: ${{ job.status }}
+        run: python3 ci/build.py summary --variant "$VARIANT" --work "$BUILD_WORK"
+
+      - name: Upload kernel or failure report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: z5157v-${{ inputs.variant }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BUILD_WORK }}/reports/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

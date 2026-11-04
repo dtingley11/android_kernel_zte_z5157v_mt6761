@@ -1,0 +1,262 @@
+diff --git a/Makefile b/Makefile
+index 8ab6ae4..8f751a6 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1137,6 +1137,13 @@ prepare0: archprepare gcc-plugins
+ # All the preparing..
+ prepare: prepare0 prepare-objtool
+ 
++ifeq ($(CONFIG_KSU),y)
++PHONY += ksu-selinux-headers
++prepare: ksu-selinux-headers
++ksu-selinux-headers: prepare0 scripts
++	$(Q)$(MAKE) $(build)=security/selinux security/selinux/flask.h
++endif
++
+ ifdef CONFIG_STACK_VALIDATION
+   has_libelf := $(call try-run,\
+ 		echo "int main() {}" | $(HOSTCC) -xc -o /dev/null -lelf -,1,0)
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index f124790..4ed4ff2 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -210,4 +210,6 @@ source "drivers/vendor/common/Kconfig"
+ 
+ source "drivers/vendor/soc/mediatek/Kconfig"
+ 
++source "KernelSU-Next/kernel/Kconfig"
++
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 5de87e6..e1aed9b 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -181,3 +181,5 @@ obj-$(CONFIG_TRUSTY)	+= trusty/
+ 
+ obj-$(CONFIG_VENDOR_COMMON_COMPILE)	+= vendor/common/
+ obj-$(CONFIG_VENDOR_SOC_MTK_COMPILE)	+= vendor/soc/mediatek/
++
++obj-$(CONFIG_KSU) += ../KernelSU-Next/kernel/
+diff --git a/drivers/input/input.c b/drivers/input/input.c
+index 5d94fc3..e4ccbe5 100644
+--- a/drivers/input/input.c
++++ b/drivers/input/input.c
+@@ -12,6 +12,10 @@
+ 
+ #define pr_fmt(fmt) KBUILD_BASENAME ": " fmt
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++#include <linux/ksu_hooks.h>
++#endif
++
+ #include <linux/init.h>
+ #include <linux/types.h>
+ #include <linux/idr.h>
+@@ -369,7 +373,12 @@ static int input_get_disposition(struct input_dev *dev,
+ static void input_handle_event(struct input_dev *dev,
+ 			       unsigned int type, unsigned int code, int value)
+ {
+-	int disposition = input_get_disposition(dev, type, code, &value);
++	int disposition;
++
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_input_handle_event(&type, &code, &value);
++#endif
++	disposition = input_get_disposition(dev, type, code, &value);
+ 
+ 	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
+ 		add_input_randomness(type, code, value);
+diff --git a/fs/exec.c b/fs/exec.c
+index d81b080..36a3372 100644
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -22,6 +22,10 @@
+  * formats.
+  */
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++#include <linux/ksu_hooks.h>
++#endif
++
+ #include <linux/slab.h>
+ #include <linux/file.h>
+ #include <linux/fdtable.h>
+@@ -1691,6 +1695,10 @@ static int do_execveat_common(int fd, struct filename *filename,
+ 	if (IS_ERR(filename))
+ 		return PTR_ERR(filename);
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
++#endif
++
+ 	/*
+ 	 * We move the actual failure in case of RLIMIT_NPROC excess from
+ 	 * set*uid() to execve() because too many poorly written programs
+diff --git a/fs/internal.h b/fs/internal.h
+index 3e58863..7b74976 100644
+--- a/fs/internal.h
++++ b/fs/internal.h
+@@ -68,6 +68,9 @@ extern int finish_automount(struct vfsmount *, struct path *);
+ extern int sb_prepare_remount_readonly(struct super_block *);
+ 
+ extern void __init mnt_init(void);
++#ifdef CONFIG_KSU
++int path_umount(struct path *path, int flags);
++#endif
+ 
+ extern int __mnt_want_write(struct vfsmount *);
+ extern int __mnt_want_write_file(struct file *);
+diff --git a/fs/namespace.c b/fs/namespace.c
+index fde3a14..20fb08d 100644
+--- a/fs/namespace.c
++++ b/fs/namespace.c
+@@ -1755,6 +1755,37 @@ SYSCALL_DEFINE1(oldumount, char __user *, name)
+ 
+ #endif
+ 
++#ifdef CONFIG_KSU
++static int can_umount(const struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++
++	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
++		return -EINVAL;
++	if (!may_mount())
++		return -EPERM;
++	if (path->dentry != path->mnt->mnt_root || !check_mnt(mnt))
++		return -EINVAL;
++	if (mnt->mnt.mnt_flags & MNT_LOCKED)
++		return -EINVAL;
++	if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
++		return -EPERM;
++	return 0;
++}
++
++int path_umount(struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++	int ret = can_umount(path, flags);
++
++	if (!ret)
++		ret = do_umount(mnt, flags);
++	dput(path->dentry);
++	mntput_no_expire(mnt);
++	return ret;
++}
++#endif
++
+ static bool is_mnt_ns_file(struct dentry *dentry)
+ {
+ 	/* Is this a proxy for a mount namespace? */
+diff --git a/fs/open.c b/fs/open.c
+index 2ff8876..3c7a345 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -4,6 +4,10 @@
+  *  Copyright (C) 1991, 1992  Linus Torvalds
+  */
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++#include <linux/ksu_hooks.h>
++#endif
++
+ #include <linux/string.h>
+ #include <linux/mm.h>
+ #include <linux/file.h>
+@@ -370,6 +374,10 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ 	int res;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
++#endif
++
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+ 
+diff --git a/fs/read_write.c b/fs/read_write.c
+index 9012312..d19c24c 100644
+--- a/fs/read_write.c
++++ b/fs/read_write.c
+@@ -4,6 +4,10 @@
+  *  Copyright (C) 1991, 1992  Linus Torvalds
+  */
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++#include <linux/ksu_hooks.h>
++#endif
++
+ #include <linux/slab.h> 
+ #include <linux/stat.h>
+ #include <linux/fcntl.h>
+@@ -460,6 +464,10 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+ {
+ 	ssize_t ret;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_vfs_read(&file, &buf, &count, &pos);
++#endif
++
+ 	if (!(file->f_mode & FMODE_READ))
+ 		return -EBADF;
+ 	if (!(file->f_mode & FMODE_CAN_READ))
+diff --git a/fs/stat.c b/fs/stat.c
+index 068fdbc..0e489cf 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -4,6 +4,10 @@
+  *  Copyright (C) 1991, 1992  Linus Torvalds
+  */
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++#include <linux/ksu_hooks.h>
++#endif
++
+ #include <linux/export.h>
+ #include <linux/mm.h>
+ #include <linux/errno.h>
+@@ -94,6 +98,10 @@ int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
+ 	int error = -EINVAL;
+ 	unsigned int lookup_flags = 0;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_stat(&dfd, &filename, &flag);
++#endif
++
+ 	if ((flag & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
+ 		      AT_EMPTY_PATH)) != 0)
+ 		goto out;
+diff --git a/include/linux/cred.h b/include/linux/cred.h
+index 4f61404..2a324f3 100644
+--- a/include/linux/cred.h
++++ b/include/linux/cred.h
+@@ -250,6 +250,16 @@ static inline const struct cred *get_cred(const struct cred *cred)
+ 	return get_new_cred(nonconst_cred);
+ }
+ 
++static inline const struct cred *get_cred_rcu(const struct cred *cred)
++{
++	struct cred *nonconst_cred = (struct cred *)cred;
++
++	if (!cred || !atomic_inc_not_zero(&nonconst_cred->usage))
++		return NULL;
++	validate_creds(cred);
++	return cred;
++}
++
+ /**
+  * put_cred - Release a reference to a set of credentials
+  * @cred: The credentials to release
+diff --git a/include/linux/ksu_hooks.h b/include/linux/ksu_hooks.h
+new file mode 100644
+index 0000000..4a7c759
+--- /dev/null
++++ b/include/linux/ksu_hooks.h
+@@ -0,0 +1,7 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _LINUX_KSU_HOOKS_H
++#define _LINUX_KSU_HOOKS_H
++
++#include "../../KernelSU-Next/kernel/include/ksu_hook.h"
++
++#endif
