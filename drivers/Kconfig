@@ -210,4 +210,6 @@ source "drivers/vendor/common/Kconfig"
 
 source "drivers/vendor/soc/mediatek/Kconfig"
 
+source "KernelSU-Next/kernel/Kconfig"
+
 endmenu

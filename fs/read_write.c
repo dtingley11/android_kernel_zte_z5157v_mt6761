@@ -4,6 +4,10 @@
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
 
+#ifdef CONFIG_KSU_MANUAL_HOOK
+#include <linux/ksu_hooks.h>
+#endif
+
 #include <linux/slab.h> 
 #include <linux/stat.h>
 #include <linux/fcntl.h>
@@ -459,6 +463,10 @@ EXPORT_SYMBOL(__vfs_read);
 ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
 	ssize_t ret;
+
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_vfs_read(&file, &buf, &count, &pos);
+#endif
 
 	if (!(file->f_mode & FMODE_READ))
 		return -EBADF;
