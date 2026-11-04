@@ -218,14 +218,14 @@ def summary(report, path):
     lines = [f"### Z5157V — {report['variant']}", "", f"Status: **{report['status']}**", ""]
     if report.get("job_status"):
         lines.append(f"Job result before summary: **{report['job_status']}**")
-    for key in ("kernel_revision", "ksu_ref", "ksu_revision", "susfs_ref", "susfs_revision", "toolchain_revision"):
+    for key in ("kernel_revision", "ksu_ref", "ksu_revision", "susfs_ref", "susfs_revision", "toolchain_revision", "anykernel_ref", "anykernel_revision"):
         if report.get(key):
             lines.append(f"- {key}: `{report[key]}`")
     for failure in report.get("compatibility_failures", []):
         lines.append(f"- {failure}")
     if report.get("error") and not report.get("compatibility_failures"):
         lines.extend(["", report["error"]])
-    lines.extend(["", "Artifacts contain build logs and resolved revisions. Successful kernel outputs are payloads, not boot images; device operation remains untested.", ""])
+    lines.extend(["", "Artifacts contain build logs and resolved revisions. Successful packaging adds an AnyKernel3 ZIP; device operation remains untested.", ""])
     with path.open("a") as stream:
         stream.write("\n".join(lines))
 

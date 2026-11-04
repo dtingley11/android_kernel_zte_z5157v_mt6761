@@ -27,3 +27,12 @@ Successful artifacts contain `zImage-dtb`, the device trees, configuration,
 symbol map, revisions and checksums. They are kernel payloads, not Android boot
 images. Logs are uploaded on both success and failure. GCC 4.9 is fetched from
 AOSP at `c348b64ea1e2015a576485aa787dc70dda9ef396`.
+
+Successful builds are also packaged using the latest osm0sis/AnyKernel3
+`master` revision (overridable with `anykernel_ref`). The ZIP checks the
+Z5157/Z5157V device identifiers and targets the non-A/B `boot` partition.
+The ZIP carries the raw ARM Image and appended kernel DTB; magiskboot
+restores the installed boot image's kernel format. It retains the installed
+ramdisk content, command line and separate DTB/DTBO sections. No ramdisk edits, bundled modules or vbmeta-partition patches are
+applied. The AnyKernel3 revision, license and checksums are included. ZIP
+structure is checked during packaging; flashing and boot remain untested.

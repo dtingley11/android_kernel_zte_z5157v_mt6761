@@ -9,6 +9,9 @@ on:
       ksu_ref:
         default: legacy
         type: string
+      anykernel_ref:
+        default: master
+        type: string
       susfs_ref:
         default: kernel-4.9-v2
         type: string
@@ -24,6 +27,7 @@ jobs:
       VARIANT: ${{ inputs.variant }}
       KSU_REF: ${{ inputs.ksu_ref }}
       SUSFS_REF: ${{ inputs.susfs_ref }}
+      ANYKERNEL_REF: ${{ inputs.anykernel_ref }}
     steps:
       - name: Set build directory
         run: echo "BUILD_WORK=$RUNNER_TEMP/z5157v-$VARIANT" >> "$GITHUB_ENV"
@@ -45,6 +49,11 @@ jobs:
 
       - name: Build kernel and modules
         run: python3 ci/build.py build --variant "$VARIANT" --work "$BUILD_WORK"
+
+      - name: Package with AnyKernel3
+        run: >-
+          python3 ci/package.py --variant "$VARIANT" --work "$BUILD_WORK"
+          --anykernel-ref "$ANYKERNEL_REF"
 
       - name: Write build summary
         if: ${{ always() }}

@@ -10,6 +10,11 @@ on:
         required: true
         default: legacy
         type: string
+      anykernel_ref:
+        description: AnyKernel3 branch, tag or commit
+        required: true
+        default: master
+        type: string
       susfs_ref:
         description: SUSFS Linux 4.9 branch, tag or commit
         required: true
@@ -29,6 +34,7 @@ jobs:
     uses: ./.github/workflows/kernel-variant.yml
     with:
       variant: stock
+      anykernel_ref: ${{ inputs.anykernel_ref || 'master' }}
 
   ksu:
     name: KernelSU Next
@@ -36,6 +42,7 @@ jobs:
     uses: ./.github/workflows/kernel-variant.yml
     with:
       variant: ksu
+      anykernel_ref: ${{ inputs.anykernel_ref || 'master' }}
       ksu_ref: ${{ inputs.ksu_ref || 'legacy' }}
 
   ksu-susfs:
@@ -45,5 +52,6 @@ jobs:
     uses: ./.github/workflows/kernel-variant.yml
     with:
       variant: ksu-susfs
+      anykernel_ref: ${{ inputs.anykernel_ref || 'master' }}
       ksu_ref: ${{ inputs.ksu_ref || 'legacy' }}
       susfs_ref: ${{ inputs.susfs_ref || 'kernel-4.9-v2' }}
