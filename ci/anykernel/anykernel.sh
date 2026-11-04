@@ -27,6 +27,9 @@ NO_MAGISK_CHECK=1;
 # header, command line and separate device-tree sections.
 split_boot;
 # magiskboot retains the installed zImage loader and compresses this Image.
-# Keep the kernel's appended FDT distinct from the boot header's DTB table.
-cp -f "$AKHOME/kernel_dtb" "$SPLITIMG/kernel_dtb" || abort "Cannot stage kernel DTB";
+# Preserve the installed appended FDT, including stock board settings.
+# Use the bundled DTB only when the installed kernel has none.
+if [ ! -s "$SPLITIMG/kernel_dtb" ]; then
+  cp -f "$AKHOME/kernel_dtb" "$SPLITIMG/kernel_dtb" || abort "Cannot stage kernel DTB";
+fi;
 flash_boot;
