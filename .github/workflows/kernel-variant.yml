@@ -2,7 +2,14 @@ name: Build kernel variant
 
 on:
   workflow_call:
+    outputs:
+      kernel_revision:
+        description: Resolved stock kernel revision
+        value: ${{ jobs.build.outputs.kernel_revision }}
     inputs:
+      kernel_ref:
+        default: main
+        type: string
       variant:
         required: true
         type: string
@@ -23,7 +30,10 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    outputs:
+      kernel_revision: ${{ steps.prepare.outputs.kernel_revision }}
     env:
+      KERNEL_REF: ${{ inputs.kernel_ref }}
       VARIANT: ${{ inputs.variant }}
       KSU_REF: ${{ inputs.ksu_ref }}
       SUSFS_REF: ${{ inputs.susfs_ref }}
@@ -38,9 +48,10 @@ jobs:
           persist-credentials: false
 
       - name: Prepare sources and apply patches
+        id: prepare
         run: >-
           python3 ci/build.py prepare --variant "$VARIANT" --work "$BUILD_WORK"
-          --ksu-ref "$KSU_REF" --susfs-ref "$SUSFS_REF"
+          --kernel-ref "$KERNEL_REF" --ksu-ref "$KSU_REF" --susfs-ref "$SUSFS_REF"
 
       - name: Install build dependencies
         run: |

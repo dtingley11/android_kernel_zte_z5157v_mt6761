@@ -1,9 +1,10 @@
 # Kernel build variants
 
-The Actions workflow builds stock, KernelSU Next, then KernelSU Next + SUSFS
-from the triggering device-kernel commit. Stock retains the recovered device
-support and removes both root integrations. Each variant uses a separate
-source and output directory.
+The Actions workflow builds stock, KernelSU Next, then KernelSU Next + SUSFS.
+It fetches the clean `main` kernel branch, preserving its display driver and
+stock defconfig. The resolved stock SHA is reused by both patched variants.
+Each variant uses a separate source and output directory. Workflow dispatch
+can select another clean kernel branch, tag or commit with `kernel_ref`.
 
 KSU defaults to the latest `legacy` branch and SUSFS to the latest
 `kernel-4.9-v2` branch when each job fetches them. No fallback revision is

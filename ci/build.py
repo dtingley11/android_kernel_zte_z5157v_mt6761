@@ -77,27 +77,13 @@ def prepare(args, report, logs):
     src = args.work / "src"
     if src.exists():
         raise RuntimeError("Source directory already exists; use a fresh work directory")
-    src.mkdir()
-    archive = args.work / "kernel-source.tar"
-    with archive.open("wb") as stream:
-        subprocess.run(["git", "archive", "--format=tar", "HEAD"], cwd=ROOT,
-                       stdout=stream, check=True)
-    subprocess.run(["tar", "-xf", str(archive), "-C", str(src)], check=True)
-    archive.unlink()
-    subprocess.run(["git", "init", "-q", str(src)], check=True)
-    # Start from the latest checked-out device tree, preserving the recovered
-    # panel and board changes. Reverse only the committed root integrations.
-    for patch in ("kernel-susfs.patch", "kernel-ksu.patch"):
-        if not apply_patch(src, patch, logs, reverse=True):
-            raise RuntimeError(f"Cannot construct clean stock sources: {patch}")
-    for path in SUSFS_FILES:
-        (src / path).unlink()
-    for path in ("KernelSU-Next", "tools/susfs"):
-        shutil.rmtree(src / path)
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
+    repository = os.environ.get("GITHUB_REPOSITORY", "dtingley11/android_kernel_zte_z5157v_mt6761")
+    report["kernel_revision"] = fetch(server + "/" + repository + ".git", args.kernel_ref,
+                                        src, logs, "device-kernel")
+    if (src / "KernelSU-Next/kernel").exists() or (src / "fs/susfs.c").exists():
+        raise RuntimeError("The selected kernel ref is not a clean stock source branch")
     defconfig = src / "arch/arm/configs/z5157v_defconfig"
-    original = defconfig.read_text().splitlines()
-    clean = [line for line in original if not re.match(r"(?:# )?CONFIG_KSU", line)]
-    defconfig.write_text("\n".join(clean) + "\n")
     if args.variant == "stock":
         report["status"] = "prepared"
         return
@@ -141,10 +127,9 @@ def prepare(args, report, logs):
         raise RuntimeError("KernelSU source hooks do not apply to the device tree")
     if args.variant == "ksu-susfs" and not apply_patch(src, "kernel-susfs.patch", logs):
         raise RuntimeError("SUSFS filesystem hooks do not apply to the device tree")
-    feature_lines = ["CONFIG_KSU=y", "CONFIG_KSU_MANUAL_HOOK=y",
-                     "CONFIG_KSU_LSM_SECURITY_HOOKS=y", "# CONFIG_KSU_KPROBES_HOOK is not set"]
+    feature_lines = (ROOT / "ci/ksu.config").read_text().splitlines()
     if args.variant == "ksu-susfs":
-        feature_lines.extend(line for line in original if re.match(r"(?:# )?CONFIG_KSU_SUSFS", line))
+        feature_lines.extend((ROOT / "ci/susfs.config").read_text().splitlines())
     with defconfig.open("a") as stream:
         stream.write("\n".join(feature_lines) + "\n")
     report["status"] = "prepared"
@@ -218,7 +203,7 @@ def summary(report, path):
     lines = [f"### Z5157V — {report['variant']}", "", f"Status: **{report['status']}**", ""]
     if report.get("job_status"):
         lines.append(f"Job result before summary: **{report['job_status']}**")
-    for key in ("kernel_revision", "ksu_ref", "ksu_revision", "susfs_ref", "susfs_revision", "toolchain_revision", "anykernel_ref", "anykernel_revision"):
+    for key in ("workflow_revision", "kernel_ref", "kernel_revision", "ksu_ref", "ksu_revision", "susfs_ref", "susfs_revision", "toolchain_revision", "anykernel_ref", "anykernel_revision"):
         if report.get(key):
             lines.append(f"- {key}: `{report[key]}`")
     for failure in report.get("compatibility_failures", []):
@@ -235,6 +220,7 @@ def main():
     parser.add_argument("command", choices=("prepare", "build", "summary"))
     parser.add_argument("--variant", required=True, choices=("stock", "ksu", "ksu-susfs"))
     parser.add_argument("--work", required=True, type=Path)
+    parser.add_argument("--kernel-ref", default="main")
     parser.add_argument("--ksu-ref", default="legacy")
     parser.add_argument("--susfs-ref", default="kernel-4.9-v2")
     parser.add_argument("--toolchain", help="Existing verified toolchain for local checks")
@@ -249,7 +235,8 @@ def main():
         report = json.loads(state.read_text())
     else:
         report = {"variant": args.variant, "status": "pending",
-                  "kernel_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+                  "workflow_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+                  "kernel_ref": args.kernel_ref,
                   "ksu_ref": args.ksu_ref if args.variant != "stock" else None,
                   "susfs_ref": args.susfs_ref if args.variant == "ksu-susfs" else None}
     try:
@@ -268,6 +255,9 @@ def main():
         return 1
     finally:
         state.write_text(json.dumps(report, indent=2) + "\n")
+        if args.command == "prepare" and report.get("kernel_revision") and os.environ.get("GITHUB_OUTPUT"):
+            with Path(os.environ["GITHUB_OUTPUT"]).open("a") as stream:
+                stream.write("kernel_revision=" + report["kernel_revision"] + "\n")
     print(json.dumps(report, indent=2))
     return 0
 
