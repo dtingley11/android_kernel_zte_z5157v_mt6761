@@ -74,7 +74,12 @@ fi
 echo "KernelSU and source-hook objects compiled and linked together without unresolved KernelSU/SUSFS hooks."
 if [[ "$mode" == image ]]; then
     case "$build_arch" in
-        arm) image_target=zImage ;;
+        arm)
+            image_target=zImage
+            if grep -qx 'CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE=y' "$out_dir/.config"; then
+                image_target=zImage-dtb
+            fi
+            ;;
         arm64) image_target=Image.gz ;;
         *) image_target=bzImage ;;
     esac

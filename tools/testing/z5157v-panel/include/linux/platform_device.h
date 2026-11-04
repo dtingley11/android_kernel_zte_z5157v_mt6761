@@ -1,0 +1,1 @@
+struct platform_device;

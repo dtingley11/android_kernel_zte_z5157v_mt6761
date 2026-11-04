@@ -333,6 +333,7 @@ extern struct LCM_DRIVER zte_mango_st7703_hdp_5p45_skyworth_hsd_lcm_drv;
 extern struct LCM_DRIVER zte_mango_st7703_hdp_5p45_skyworth_panda_lcm_drv;
 extern struct LCM_DRIVER zte_mango_jd9366d_hdp_5p45_lianchuang_panda_lcm_drv;
 extern struct LCM_DRIVER zte_mango_ili9881c_hdp_5p45_skyworth_huajiacai_lcm_drv;
+extern struct LCM_DRIVER zte_mango_zhongguangdian_er68577_720p_5p45_boe_lcm_drv;
 #ifdef BUILD_LK
 extern void mdelay(unsigned long msec);
 #endif

@@ -6,6 +6,10 @@
 #include "../bat_setting/battery_protect_policy_080500100328.dtsi"
 
 /{
+	charge_arbitrate_service {
+		cas,force-full-aging = <1>;
+	};
+
 	/*add for Z5157V flash chip node*/
 	flashlights_aw3644: flashlights_aw3644 {
 		compatible = "mediatek,flashlights_aw3644";
