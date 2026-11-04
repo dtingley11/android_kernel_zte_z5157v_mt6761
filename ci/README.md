@@ -33,7 +33,8 @@ Successful builds are also packaged using the latest osm0sis/AnyKernel3
 `master` revision (overridable with `anykernel_ref`). The ZIP checks the
 Z5157/Z5157V device identifiers and targets the non-A/B `boot` partition.
 The ZIP carries the raw ARM Image and appended kernel DTB; magiskboot
-restores the installed boot image's kernel format. It retains the installed
+restores the installed boot image's kernel format. It preserves the installed
+appended DTB, using the bundled DTB only when none is present. It also retains
 ramdisk content, command line and separate DTB/DTBO sections. No ramdisk edits, bundled modules or vbmeta-partition patches are
 applied. The AnyKernel3 revision, license and checksums are included. ZIP
 structure is checked during packaging; flashing and boot remain untested.
