@@ -59,10 +59,14 @@ ui_print 'Installed ARM32 SUSFS v1.5.5 tool; SUS_SU is unavailable with this man
  config=stage/'config.sh';text=config.read_text().replace('sus_su=2','sus_su=-1');config.write_text(text)
  tool_hash=hashlib.sha256(data).hexdigest()
  (stage/'susfs-bin-check.sh').write_text('#!/system/bin/sh\nexpected='+tool_hash+'\nactual=$(sha256sum /data/adb/ksu/bin/ksu_susfs | cut -d " " -f1)\n[ "$actual" = "$expected" ] && echo match || echo mismatch\n')
- (stage/'susfs-bin-update.sh').write_text("#!/system/bin/sh\necho 'The ARM32 v1.5.5 tool is bundled with this package. Install a matching compatibility package to update it.'\nexit 1\n")
+ updater="#!/system/bin/sh\necho 'The ARM32 v1.5.5 tool is bundled with this package. Install a matching compatibility package to update it.'\nexit 1\n"
+ for name in ('susfs-bin-update.sh','action.sh'):
+  (stage/name).write_text(updater)
  provenance={'module_source_url':URL,'module_source_sha256':SHA,'susfs_revision':SUSFS,'tool_abi':'armeabi-v7a','tool_sha256':tool_hash,'kernel_version_required':'v1.5.5','sus_su_supported':False}
  (stage/'ARM32-BUILD.json').write_text(json.dumps(provenance,indent=2)+'\n')
- for script in stage.glob('*.sh'):subprocess.run(['sh','-n',str(script)],check=True)
+ for script in stage.glob('*.sh'):
+  if 'ksu_susfs_arm64' in script.read_text():raise RuntimeError('ARM64 download remains in '+script.name)
+  subprocess.run(['sh','-n',str(script)],check=True)
  archive=args.out/'SUSFS-R28-Z5157V-ARM32-v1.5.5.zip'
  with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
   for f in sorted(stage.rglob('*')):
