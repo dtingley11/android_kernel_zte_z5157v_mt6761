@@ -18,9 +18,10 @@ jobs:
       matrix:
         component: [kernel, native, daemon]
     env:
-      EXPERIMENT_WORK: ${{ github.workspace }}/../next-arm32-${{ matrix.component }}
       RUSTUP_TOOLCHAIN: 1.99.1
     steps:
+      - name: Set build directory
+        run: echo "EXPERIMENT_WORK=$RUNNER_TEMP/next-arm32-${{ matrix.component }}" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
