@@ -1,0 +1,87 @@
+diff --git a/manager/app/build.gradle.kts b/manager/app/build.gradle.kts
+index 8b7c017b..16337c2d 100644
+--- a/manager/app/build.gradle.kts
++++ b/manager/app/build.gradle.kts
+@@ -24,6 +24,9 @@ apksign {
+ 
+ android {
+     namespace = "com.rifsxd.ksunext"
++    defaultConfig {
++        applicationId = "com.rifsxd.ksunext.z5157v"
++    }
+ 
+     buildTypes {
+         release {
+diff --git a/manager/app/src/main/res/values/strings.xml b/manager/app/src/main/res/values/strings.xml
+index a7550ce6..bc88a2b0 100644
+--- a/manager/app/src/main/res/values/strings.xml
++++ b/manager/app/src/main/res/values/strings.xml
+@@ -8,7 +8,7 @@
+     <string name="issue_report_github_link">https://github.com/KernelSU-Next/KernelSU-Next/issues</string>
+     <string name="issue_report_telegram_link">https://t.me/ksunext</string>
+     <string name="confirm">Confirm</string>
+-    <string name="app_name" translatable="false">KernelSU Next</string>
++    <string name="app_name" translatable="false">KernelSU Next Z5157V</string>
+     <string name="home">Home</string>
+     <string name="home_not_installed">Not installed</string>
+     <string name="home_click_to_install">Click to install</string>
+diff --git a/manager/build.gradle.kts b/manager/build.gradle.kts
+index 1d3285b0..3c737701 100644
+--- a/manager/build.gradle.kts
++++ b/manager/build.gradle.kts
+@@ -18,7 +18,7 @@ cmaker {
+                 "-DANDROID_STL=none",
+             )
+         )
+-        abiFilters("arm64-v8a", "armeabi-v7a", "x86_64")
++        abiFilters("armeabi-v7a")
+     }
+     buildTypes {
+         if (it.name == "release") {
+@@ -33,8 +33,8 @@ val androidCompileSdkVersion = 36
+ val androidCompileNdkVersion = "28.1.13356709"
+ val androidSourceCompatibility = JavaVersion.VERSION_21
+ val androidTargetCompatibility = JavaVersion.VERSION_21
+-val managerVersionCode by extra(getVersionCode())
+-val managerVersionName by extra(getVersionName())
++val managerVersionCode by extra(12701)
++val managerVersionName by extra("v1.0.8-z5157v-android10")
+ 
+ fun getGitCommitCount(): Int {
+     val out = ByteArrayOutputStream()
+@@ -78,7 +78,7 @@ subprojects {
+                     versionName = managerVersionName
+                 }
+                 ndk {
+-                    abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
++                    abiFilters += listOf("armeabi-v7a")
+                 }
+             }
+ 
+@@ -93,4 +93,13 @@ subprojects {
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}
++// Replace every transitive reference with the same pinned, patched source module.
++allprojects {
++    configurations.configureEach {
++        resolutionStrategy.dependencySubstitution {
++            substitute(module("com.github.MMRLApp.MMRL:platform"))
++                .using(project(":mmrl-platform"))
++        }
++    }
++}
+diff --git a/manager/settings.gradle.kts b/manager/settings.gradle.kts
+index e8f86c85..5591d9be 100644
+--- a/manager/settings.gradle.kts
++++ b/manager/settings.gradle.kts
+@@ -19,3 +19,6 @@ dependencyResolutionManagement {
+ 
+ rootProject.name = "KernelSU-Next"
+ include(":app")
++
++include(":mmrl-platform")
++project(":mmrl-platform").projectDir = file("third-party/mmrl-platform")
