@@ -5,6 +5,10 @@ on:
     branches: [main, ksu_added]
   workflow_dispatch:
     inputs:
+      stock_uname:
+        description: Use the original uname for the stock kernel
+        type: boolean
+        default: false
       kernel_ref:
         description: Stock kernel branch, tag or commit
         required: true
@@ -39,6 +43,7 @@ jobs:
     uses: ./.github/workflows/kernel-variant.yml
     with:
       variant: stock
+      stock_uname: ${{ inputs.stock_uname || false }}
       kernel_ref: ${{ inputs.kernel_ref || 'main' }}
       anykernel_ref: ${{ inputs.anykernel_ref || 'master' }}
 

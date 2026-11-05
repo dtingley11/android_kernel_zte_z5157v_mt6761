@@ -83,6 +83,8 @@ def prepare(args, report, logs):
                                         src, logs, "device-kernel")
     if (src / "KernelSU-Next/kernel").exists() or (src / "fs/susfs.c").exists():
         raise RuntimeError("The selected kernel ref is not a clean stock source branch")
+    if not apply_patch(src, "kernel-uname.patch", logs):
+        raise RuntimeError("The stock uname build settings do not apply to the device kernel")
     defconfig = src / "arch/arm/configs/z5157v_defconfig"
     if args.variant == "stock":
         report["status"] = "prepared"
@@ -154,6 +156,9 @@ def build(args, report, logs):
     prefix = str(toolchain / "bin/arm-linux-androideabi-")
     out = args.work / "out"
     make = ["make", f"O={out}", "ARCH=arm", f"CROSS_COMPILE={prefix}", "HOSTCFLAGS=-O2 -fcommon"]
+    stock_uname = args.variant != "stock" or args.stock_uname
+    if args.stock_uname:
+        make.append("Z5157V_STOCK_UNAME=1")
     if args.manager_config:
         manager = json.loads(args.manager_config.read_text())
         if args.variant == "stock" or report.get("ksu_revision") != manager["ksu_revision"]:
@@ -197,6 +202,21 @@ def build(args, report, logs):
             raise RuntimeError(f"Unexpected linked state for {symbol}")
     if re.search(r"\b(register_kprobe|register_kretprobe)$", symbols, re.M):
         raise RuntimeError("Unexpected kprobe implementation in the linked kernel")
+    release_header = (out / "include/generated/utsrelease.h").read_text()
+    compile_header = (out / "include/generated/compile.h").read_text()
+    release = re.search(r'^#define UTS_RELEASE "([^"]+)"$', release_header, re.M).group(1)
+    version = re.search(r'^#define UTS_VERSION "([^"]+)"$', compile_header, re.M).group(1)
+    report["uname"] = {"mode": "stock" if stock_uname else "build",
+                       "release": release, "version": version}
+    if stock_uname:
+        reference = json.loads((ROOT / "ci/stock-uname.json").read_text())
+        if (release, version) != (reference["release"], reference["version"]):
+            raise RuntimeError("Compiled uname differs from the stock boot image")
+        image = (out / "arch/arm/boot/Image").read_bytes()
+        fields = release.encode().ljust(65, b"\0") + version.encode().ljust(65, b"\0")
+        if fields not in image:
+            raise RuntimeError("Stock UTS fields are missing from the compiled kernel")
+        report["uname"]["stock_boot_sha256"] = reference["stock_boot_sha256"]
     report["status"] = "built"
     report["stock_panel_count"] = len(panels)
     report["device_tested"] = False
@@ -226,6 +246,9 @@ def summary(report, path):
             lines.append(f"- {key}: `{report[key]}`")
     for failure in report.get("compatibility_failures", []):
         lines.append(f"- {failure}")
+    if report.get("uname"):
+        identity = report["uname"]
+        lines.append(f"- uname ({identity['mode']}): `{identity['release']} {identity['version']}`")
     if report.get("error") and not report.get("compatibility_failures"):
         lines.extend(["", report["error"]])
     lines.extend(["", "Artifacts contain build logs and resolved revisions. Successful packaging adds an AnyKernel3 ZIP; device operation remains untested.", ""])
@@ -243,6 +266,7 @@ def main():
     parser.add_argument("--susfs-ref", default="kernel-4.9-v2")
     parser.add_argument("--toolchain", help="Existing verified toolchain for local checks")
     parser.add_argument("--manager-config", type=Path, help="Public certificate and package configuration for a matching manager")
+    parser.add_argument("--stock-uname", action="store_true", help="Use the stock uname for a stock build; KSU builds always use it")
     parser.add_argument("--jobs", type=int, default=max(1, os.cpu_count() or 1))
     parser.add_argument("--summary", type=Path)
     args = parser.parse_args()

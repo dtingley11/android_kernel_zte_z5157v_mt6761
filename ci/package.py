@@ -70,7 +70,8 @@ def main():
         init_suffix = "-init-rc" if report.get("init_rc_proxy_upstream_revision") else ""
         if report.get("init_rc_launcher") == "system-shell":
             init_suffix += "-shell"
-        archive = reports / f"AnyKernel3-Z5157V-{args.variant}-{report['kernel_revision'][:9]}{manager_suffix}{init_suffix}.zip"
+        uname_suffix = "-stock-uname" if report.get("uname", {}).get("mode") == "stock" else ""
+        archive = reports / f"AnyKernel3-Z5157V-{args.variant}-{report['kernel_revision'][:9]}{manager_suffix}{init_suffix}{uname_suffix}.zip"
         temporary = work / "anykernel-package.zip"
         with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as stream:
             for path in sorted(stage.rglob("*")):

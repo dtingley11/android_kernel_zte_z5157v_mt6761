@@ -25,6 +25,9 @@ on:
       manager_config:
         default: ''
         type: string
+      stock_uname:
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -42,6 +45,7 @@ jobs:
       SUSFS_REF: ${{ inputs.susfs_ref }}
       ANYKERNEL_REF: ${{ inputs.anykernel_ref }}
       MANAGER_CONFIG: ${{ inputs.manager_config }}
+      STOCK_UNAME: ${{ inputs.stock_uname }}
     steps:
       - name: Set build directory
         run: echo "BUILD_WORK=$RUNNER_TEMP/z5157v-$VARIANT" >> "$GITHUB_ENV"
@@ -67,6 +71,9 @@ jobs:
           manager_args=()
           if [ -n "$MANAGER_CONFIG" ]; then
             manager_args+=(--manager-config "$MANAGER_CONFIG")
+          fi
+          if [ "$STOCK_UNAME" = true ]; then
+            manager_args+=(--stock-uname)
           fi
           python3 ci/build.py build --variant "$VARIANT" --work "$BUILD_WORK" "${manager_args[@]}"
 

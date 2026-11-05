@@ -623,6 +623,14 @@ else
 include/config/auto.conf: ;
 endif # $(dot-config)
 
+# Match the supplied Z5157V stock kernel identity for rooted builds.
+# Stock boot SHA-256: 80a0d09f04215e2b4e54c3eaa120ff325630f64f3f73e7eac7881c06c844e526
+# Plain stock builds can opt in with Z5157V_STOCK_UNAME=1.
+ifneq ($(filter y 1,$(CONFIG_KSU) $(Z5157V_STOCK_UNAME)),)
+override LOCALVERSION := +
+export LOCALVERSION
+endif
+
 # For the kernel to actually contain only the needed exported symbols,
 # we have to build modules as well to determine what those symbols are.
 # (this can be evaluated only once include/config/auto.conf has been included)

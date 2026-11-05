@@ -35,6 +35,16 @@ endif
 # dependencies on generated files need to be listed explicitly
 $(obj)/version.o: include/generated/compile.h
 
+# Original Z5157V build identity for KSU and opted-in stock builds.
+ifneq ($(filter y 1,$(CONFIG_KSU) $(Z5157V_STOCK_UNAME)),)
+override KBUILD_BUILD_VERSION := 1
+override KBUILD_BUILD_TIMESTAMP := Fri Jun 16 10:31:59 CST 2023
+override KBUILD_BUILD_USER := zte
+override KBUILD_BUILD_HOST := scl_xa242_056
+export KBUILD_BUILD_VERSION KBUILD_BUILD_TIMESTAMP
+export KBUILD_BUILD_USER KBUILD_BUILD_HOST
+endif
+
 # compile.h changes depending on hostname, generation number, etc,
 # so we regenerate it always.
 # mkcompile_h will make sure to only update the
