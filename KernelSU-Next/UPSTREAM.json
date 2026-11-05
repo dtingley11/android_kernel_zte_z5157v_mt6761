@@ -16,5 +16,11 @@
     "revision": "b933b1f728116a456fbebf27b6a8772a640cdf23",
     "version_code": 33318
   },
-  "revision_scope": "manager, userspace and shared UAPI"
+  "revision_scope": "manager, userspace and shared UAPI",
+  "susfs": {
+    "repository": "https://github.com/wxx9248/susfs4ksu",
+    "revision": "41ba0b533b8524a0ba95a5952506a75f17355450",
+    "version": "1.5.5",
+    "kernel_patch_sha256": "b11b7f4cb6d6ca0a5b8f447ef66ed35eebdddaa2b01f6cf9a88df370d5ad10b9"
+  }
 }

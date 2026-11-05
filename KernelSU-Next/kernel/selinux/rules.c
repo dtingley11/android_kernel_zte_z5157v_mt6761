@@ -150,6 +150,9 @@ static int apply_kernelsu_rules_fn(void *ptr)
     ksu_allow(db, "init", "adb_data_file", "file", ALL);
     ksu_allow(db, "init", "adb_data_file", "dir", ALL); // #1289
     ksu_allow(db, "init", KERNEL_SU_DOMAIN, ALL, ALL);
+    #ifdef CONFIG_KSU_SUSFS
+    ksu_allow(db, "zygote", "labeledfs", "filesystem", "unmount");
+#endif
     // we need to umount modules in zygote
     ksu_allow(db, "zygote", "adb_data_file", "dir", "search");
 
@@ -269,6 +272,12 @@ do_stop_machine:
 out_reset_avc:
 	smp_mb();
 	reset_avc_cache();
+#endif
+#ifdef CONFIG_KSU_SUSFS
+    /* security_secctx_to_secid takes the policy lock; cache after unlocking. */
+    susfs_set_init_sid();
+    susfs_set_ksu_sid();
+    susfs_set_zygote_sid();
 #endif
 }
 

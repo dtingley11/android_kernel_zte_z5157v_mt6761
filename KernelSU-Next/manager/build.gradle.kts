@@ -11,7 +11,7 @@ plugins {
     alias(libs.plugins.lsplugin.cmaker)
 }
 
-// Opt in explicitly; the kernel-side ARM32 port is still incomplete.
+// Opt in explicitly to the Z5157V experimental ARM32 build.
 val arm32Experimental = providers.gradleProperty("ksuArm32Experimental")
     .map(String::toBoolean).getOrElse(false)
 val managerAbis = if (arm32Experimental) listOf("armeabi-v7a")

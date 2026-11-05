@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the experimental legacy kernel and v3.4.2 ARM32 components; never create a flashable package."""
+"""Build and verify experimental legacy kernels and v3.4.2 ARM32 components."""
 import argparse
 import hashlib
 import json
@@ -44,17 +44,27 @@ def build_kernel(args, logs, report):
     out = args.work / 'kernel'
     make = ['make', f'O={out}', 'ARCH=arm',
             f'CROSS_COMPILE={toolchain}/bin/arm-linux-androideabi-', 'HOSTCFLAGS=-O2 -fcommon']
-    run([*make, 'z5157v_next_experimental_defconfig'], logs, 'configure')
+    combined = args.component == 'kernel-susfs'
+    config = 'z5157v_next_susfs_experimental_defconfig' if combined else 'z5157v_next_experimental_defconfig'
+    run([*make, config], logs, 'configure')
     values = config_values(out / '.config')
     expected = {'KSU': 'y', 'KSU_ARM32_EXPERIMENTAL': 'y', 'KSU_MANUAL_HOOK': 'y',
                 'KSU_KPROBES_HOOK': 'n', 'KSU_SYSCALL_TABLE_HOOK': 'n', 'KPROBES': 'n',
                 'KSU_DEBUG': 'n', 'KSU_DISABLE_MANAGER': 'n', 'KSU_DISABLE_POLICY': 'n',
                 'SECURITY_SELINUX': 'y', 'SECURITY_SELINUX_BOOTPARAM_VALUE': '1',
-                'MODULE_SIG_FORCE': 'y'}
+                'MODULE_SIG_FORCE': 'y', 'KSU_SUSFS': 'y' if combined else 'n',
+                'KSU_SUSFS_SUS_SU': 'n'}
+    if combined:
+        fragment = config_values(ROOT / 'ci/susfs.config')
+        expected.update(fragment)
     for option, expected_value in expected.items():
         if values.get(option, 'n') != expected_value:
             raise RuntimeError(f'Unexpected CONFIG_{option}={values.get(option)}')
     report['configuration_checks'] = expected
+    report['variant'] = 'ksu-susfs' if combined else 'ksu'
+    report['manager'] = json.loads((ROOT / 'ci/next-manager.json').read_text())
+    report['susfs_revision'] = '41ba0b533b8524a0ba95a5952506a75f17355450' if combined else None
+    report['enabled_susfs_features'] = sorted(k for k,v in values.items() if k.startswith('KSU_SUSFS') and v == 'y')
     run([sys.executable, ROOT / 'tools/testing/z5157v-next-legacy/run.py',
          '--work', args.work / 'tests'], logs, 'host-checks')
     run([*make, f'-j{args.jobs}', 'zImage-dtb', 'dtbs', 'modules'], logs, 'full-kernel')
@@ -73,6 +83,8 @@ def build_kernel(args, logs, report):
                 'ksu_handle_vfs_read', 'ksu_handle_input_handle_event',
                 'ksu_handle_sys_reboot', 'ksu_lsm_hook_init', 'ksu_handle_setresuid',
                 'ksu_install_file_wrapper', 'ksu_inode_init_security_anon_compat'}
+    if combined:
+        required.update({'susfs_init', 'ksu_susfs_task_prctl', 'susfs_try_umount_all', 'susfs_set_ksu_sid'})
     if not required <= linked:
         raise RuntimeError(f'Missing linked interfaces: {sorted(required - linked)}')
     report['linked_interfaces'] = sorted(required)
@@ -93,6 +105,9 @@ def build_kernel(args, logs, report):
         if identity[field].encode().ljust(65, b'\0') not in image:
             raise RuntimeError(f'Actual kernel UTS {field} differs from stock')
     report['uname'] = identity
+    for field in ('package', 'certificate_sha256'):
+        if report['manager'][field].encode() not in image:
+            raise RuntimeError(f'Kernel does not contain the expected manager {field}')
     check_arm_elf(out / 'vmlinux')
     report['outputs'] = [{'file': str(path.relative_to(out)),
                           'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
@@ -138,11 +153,14 @@ def build_daemon(args, logs, report):
          '--manifest-path', NEXT / 'userspace/ksud/Cargo.toml'], logs, 'daemon', env=env)
     daemon = args.work / 'rust/armv7-linux-androideabi/release/ksud'
     report['outputs'] = [check_arm_elf(daemon)]
+    artifact = logs / 'ksud-arm32'
+    run([bins / 'llvm-strip', '--strip-all', '-o', artifact, daemon], logs, 'strip-daemon')
+    report['daemon_artifact'] = check_arm_elf(artifact)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('component', choices=('kernel', 'native', 'daemon'))
+    parser.add_argument('component', choices=('kernel', 'kernel-susfs', 'native', 'daemon'))
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--toolchain', type=Path)
     parser.add_argument('--ndk', type=Path, default=os.environ.get('ANDROID_NDK_HOME'))
@@ -156,12 +174,14 @@ def main():
     logs = args.work / 'reports'
     logs.mkdir(exist_ok=True)
     report = {'component': args.component, 'userspace_revision': REVISION, 'kernel_revision': KERNEL_REVISION,
-              'status': 'failed', 'device_tested': False, 'flashable_package': False}
+              'status': 'failed', 'device_tested': False, 'flashable_package': False,
+              'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+              'source_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))}
     try:
         imported = json.loads((NEXT / 'UPSTREAM.json').read_text())
         if imported['revision'] != REVISION or imported['kernel']['revision'] != KERNEL_REVISION:
             raise RuntimeError('Unexpected upstream source revision')
-        {'kernel': build_kernel, 'native': build_native, 'daemon': build_daemon}[args.component](args, logs, report)
+        {'kernel': build_kernel, 'kernel-susfs': build_kernel, 'native': build_native, 'daemon': build_daemon}[args.component](args, logs, report)
         report['status'] = 'compiled'
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         report['error'] = str(error)

@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [kernel, native, daemon]
+        component: [kernel, kernel-susfs, native, daemon]
     env:
       RUSTUP_TOOLCHAIN: 1.99.1
     steps:
@@ -26,7 +26,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install kernel build tools
-        if: matrix.component == 'kernel'
+        if: startsWith(matrix.component, 'kernel')
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex libelf-dev libssl-dev libncurses-dev python-is-python3
@@ -39,11 +39,67 @@ jobs:
         run: rustup toolchain install 1.99.1 --profile minimal --target armv7-linux-androideabi
       - name: Compile experimental component
         run: python3 ci/next-experimental.py '${{ matrix.component }}' --work "$EXPERIMENT_WORK"
-      - name: Upload diagnostic logs
+      - name: Package experimental kernel
+        if: startsWith(matrix.component, 'kernel')
+        run: python3 ci/next-package.py --work "$EXPERIMENT_WORK"
+      - name: Upload diagnostic logs and artifacts
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: next-arm32-${{ matrix.component }}-${{ github.run_id }}
           path: ${{ env.EXPERIMENT_WORK }}/reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  manager:
+    name: Signed ARM32 manager
+    needs: components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set manager build directory
+        run: echo "MANAGER_WORK=$RUNNER_TEMP/next-arm32-manager" >> "$GITHUB_ENV"
+      - name: Install Android build tools
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install
+          'platforms;android-36' 'build-tools;35.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: next-arm32-daemon-${{ github.run_id }}
+          path: ${{ runner.temp }}/next-daemon
+      - name: Restore manager signing key
+        env:
+          MANAGER_KEYSTORE_B64: ${{ secrets.Z5157V_MANAGER_KEYSTORE_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          value = os.environ['MANAGER_KEYSTORE_B64']
+          if not value:
+              raise SystemExit('Z5157V_MANAGER_KEYSTORE_B64 is required')
+          path = Path(os.environ['RUNNER_TEMP']) / 'z5157v-manager.p12'
+          path.write_bytes(base64.b64decode(value, validate=True))
+          path.chmod(0o600)
+          PY
+      - name: Build matching signed manager
+        env:
+          MANAGER_KEYSTORE_PASSWORD: ${{ secrets.Z5157V_MANAGER_KEYSTORE_PASSWORD }}
+        run: >-
+          python3 ci/next-manager.py --work "$MANAGER_WORK"
+          --daemon "$RUNNER_TEMP/next-daemon/ksud-arm32"
+          --keystore "$RUNNER_TEMP/z5157v-manager.p12"
+      - name: Upload manager and build reports
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: next-arm32-manager-${{ github.run_id }}
+          path: ${{ env.MANAGER_WORK }}/reports/
           if-no-files-found: warn
           retention-days: 14

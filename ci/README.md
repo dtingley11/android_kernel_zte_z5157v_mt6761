@@ -1,5 +1,9 @@
 # Kernel build variants
 
+For the current ARM32 Next experiment and signed APK/AK3 artifacts, see
+[the experimental build documentation](../docs/ksu-next-experimental.md).
+The recipes below describe the separate stock/v1.0.8 build workflow.
+
 The Actions workflow builds stock, KernelSU Next, then KernelSU Next + SUSFS.
 It fetches the clean `main` kernel branch, preserving its display driver and
 stock defconfig. The resolved stock SHA is reused by both patched variants.

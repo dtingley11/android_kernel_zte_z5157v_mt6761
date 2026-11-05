@@ -167,12 +167,14 @@ $(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
 ccflags-y += -DKSU_VERSION_TAG=\"$(KSU_VERSION_TAG)\"
 
 ifndef KSU_NEXT_MANAGER_SIZE
-KSU_NEXT_MANAGER_SIZE := 0x3e6
+KSU_NEXT_MANAGER_SIZE := 820
 endif
 
 ifndef KSU_NEXT_MANAGER_HASH
-KSU_NEXT_MANAGER_HASH := 79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7
+KSU_NEXT_MANAGER_HASH := cde1c4e277687ec71ae02a58c98690d4d8748e2eb4ebbd6febd3d0171b26c9c7
 endif
+
+KSU_MANAGER_PACKAGE ?= com.rifsxd.ksunext.z5157v.experimental
 
 ifdef KSU_MANAGER_PACKAGE
 ccflags-y += -DKSU_MANAGER_PACKAGE=\"$(KSU_MANAGER_PACKAGE)\"
@@ -284,3 +286,7 @@ ifeq ($(shell grep -Eq "void[[:space:]]*\*[[:space:]]*ns_get_path" $(srctree)/in
 ccflags-y += -DKSU_NS_GET_PATH_RETURNS_POINTER
 endif
 kernelsu-objs += selinux/anon_inode_compat.o
+
+ifeq ($(CONFIG_KSU_SUSFS),y)
+kernelsu-objs += compat/susfs.o
+endif

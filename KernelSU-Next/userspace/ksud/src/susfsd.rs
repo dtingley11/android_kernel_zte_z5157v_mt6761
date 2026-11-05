@@ -1,20 +1,45 @@
-use std::ffi::{CStr, CString};
+#[cfg(target_arch = "arm")]
+#[path = "susfs_legacy.rs"]
+mod legacy;
+
+#[cfg(target_arch = "arm")]
+fn detected_susfs_version() -> Option<String> { legacy::version().ok() }
+#[cfg(target_arch = "arm")]
+pub fn show_version() -> Result<()> { println!("{}", legacy::version()?); Ok(()) }
+#[cfg(target_arch = "arm")]
+pub fn show_variant() -> Result<()> { println!("{}", legacy::variant()?); Ok(()) }
+#[cfg(target_arch = "arm")]
+pub fn show_features(check_only: bool) -> Result<()> { legacy::features(check_only) }
+
+use std::ffi::CString;
+#[cfg(not(target_arch = "arm"))]
+use std::ffi::CStr;
 use anyhow::{Context, Result, anyhow, ensure};
+#[cfg(not(target_arch = "arm"))]
 use libc::{syscall, SYS_reboot, c_char};
 use log::{info, warn};
 
 // Constants from susfsd.c
+#[cfg(not(target_arch = "arm"))]
 const KSU_INSTALL_MAGIC1: u64 = 0xDEADBEEF;
+#[cfg(not(target_arch = "arm"))]
 const SUSFS_MAGIC: u64 = 0xFAFAFAFA;
 
+#[cfg(not(target_arch = "arm"))]
 const CMD_SUSFS_SHOW_VERSION: u64 = 0x555e1;
+#[cfg(not(target_arch = "arm"))]
 const CMD_SUSFS_SHOW_ENABLED_FEATURES: u64 = 0x555e2;
+#[cfg(not(target_arch = "arm"))]
 const CMD_SUSFS_SHOW_VARIANT: u64 = 0x555e3;
 
+#[cfg(not(target_arch = "arm"))]
 const SUSFS_ENABLED_FEATURES_SIZE: usize = 8192;
+#[cfg(not(target_arch = "arm"))]
 const SUSFS_MAX_VERSION_BUFSIZE: usize = 16;
+#[cfg(not(target_arch = "arm"))]
 const SUSFS_MAX_VARIANT_BUFSIZE: usize = 16;
 
+#[cfg(not(target_arch = "arm"))]
 const ERR_CMD_NOT_SUPPORTED: i32 = 126;
 const AUTOLOAD_CONFIG_MODULE_ID: &str = "internal.ksud.susfsd";
 const AUTOLOAD_ENABLED_CONFIG_KEY: &str = "autoload.enabled";
@@ -112,6 +137,7 @@ pub fn set_autoload(enabled: bool, kmi: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "arm"))]
 fn detected_susfs_version() -> Option<String> {
     let mut cmd = SusfsVersion {
         version: [0; SUSFS_MAX_VERSION_BUFSIZE],
@@ -203,24 +229,28 @@ pub fn unload() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "arm"))]
 #[repr(C)]
 struct SusfsVersion {
     version: [u8; SUSFS_MAX_VERSION_BUFSIZE],
     err: i32,
 }
 
+#[cfg(not(target_arch = "arm"))]
 #[repr(C)]
 struct SusfsVariant {
     variant: [u8; SUSFS_MAX_VARIANT_BUFSIZE],
     err: i32,
 }
 
+#[cfg(not(target_arch = "arm"))]
 #[repr(C)]
 struct SusfsEnabledFeatures {
     features: [u8; SUSFS_ENABLED_FEATURES_SIZE],
     err: i32,
 }
 
+#[cfg(not(target_arch = "arm"))]
 pub fn show_version() -> Result<()> {
     let mut cmd = SusfsVersion {
         version: [0; SUSFS_MAX_VERSION_BUFSIZE],
@@ -242,6 +272,7 @@ pub fn show_version() -> Result<()> {
     }
 }
 
+#[cfg(not(target_arch = "arm"))]
 pub fn show_variant() -> Result<()> {
     let mut cmd = SusfsVariant {
         variant: [0; SUSFS_MAX_VARIANT_BUFSIZE],
@@ -263,6 +294,7 @@ pub fn show_variant() -> Result<()> {
     }
 }
 
+#[cfg(not(target_arch = "arm"))]
 pub fn show_features(check_only: bool) -> Result<()> {
     let mut cmd = SusfsEnabledFeatures {
         features: [0; SUSFS_ENABLED_FEATURES_SIZE],
@@ -293,6 +325,7 @@ pub fn show_features(check_only: bool) -> Result<()> {
     }
 }
 
+#[cfg(not(target_arch = "arm"))]
 fn check_unsupported(err: i32, cmd: u64) -> Result<()> {
     if err == ERR_CMD_NOT_SUPPORTED {
         return Err(anyhow!("CMD: '0x{:x}', SUSFS operation not supported, please enable it in kernel", cmd));

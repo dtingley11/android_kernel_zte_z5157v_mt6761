@@ -25,6 +25,13 @@ apksign {
 android {
     namespace = "com.rifsxd.ksunext"
 
+    defaultConfig {
+        val arm32 = providers.gradleProperty("ksuArm32Experimental")
+            .map(String::toBoolean).getOrElse(false)
+        applicationId = if (arm32) "com.rifsxd.ksunext.z5157v.experimental" else "com.rifsxd.ksunext"
+        manifestPlaceholders["managerLabel"] = if (arm32) "KernelSU Next Experimental" else "@string/app_name"
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

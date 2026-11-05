@@ -48,3 +48,13 @@ subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-
                 '-I', str(a.work), str(Path(__file__).with_name('sucompat.c')),
                 '-o', str(a.work / 'sucompat')], check=True)
 subprocess.run([str(a.work / 'sucompat')], check=True)
+
+control = (ROOT / 'KernelSU-Next/kernel/compat/susfs.c').read_text()
+control = control[control.index('int ksu_susfs_task_prctl('):]
+constants = '\n'.join(line for line in (ROOT / 'include/linux/susfs_def.h').read_text().splitlines()
+                      if line.startswith('#define CMD_') or line.startswith('#define SUSFS_FAKE_'))
+(a.work / 'actual-susfs-control.inc').write_text(constants + '\n' + control)
+subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
+                '-Wno-misleading-indentation', '-I', str(a.work),
+                str(Path(__file__).with_name('susfs-control.c')), '-o', str(a.work / 'susfs-control')], check=True)
+subprocess.run([str(a.work / 'susfs-control')], check=True)

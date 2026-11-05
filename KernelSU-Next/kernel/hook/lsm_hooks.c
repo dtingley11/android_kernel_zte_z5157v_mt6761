@@ -9,6 +9,7 @@
 #include "runtime/ksud_boot.h"
 #include "compat/kernel_compat.h"
 #include "setuid_hook.h"
+#include "compat/susfs.h"
 #include "manager/throne_tracker.h"
 
 #ifndef KSU_KPROBES_HOOK
@@ -126,6 +127,9 @@ int ksu_inode_permission(struct inode *inode, int mask)
 }
 
 static struct security_hook_list ksu_hooks[] = {
+#ifdef CONFIG_KSU_SUSFS
+	LSM_HOOK_INIT(task_prctl, ksu_susfs_task_prctl),
+#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||                           \
 	defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
 	LSM_HOOK_INIT(key_permission, ksu_key_permission),
