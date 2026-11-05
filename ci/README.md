@@ -38,3 +38,11 @@ appended DTB, using the bundled DTB only when none is present. It also retains
 ramdisk content, command line and separate DTB/DTBO sections. No ramdisk edits, bundled modules or vbmeta-partition patches are
 applied. The AnyKernel3 revision, license and checksums are included. ZIP
 structure is checked during packaging; flashing and boot remain untested.
+
+The separate `manager-android10.yml` workflow on `ksu-v108-android10-manager`
+builds the Android 10 manager fix and matching v1.0.8 kernels. It rebuilds the
+pinned MMRL platform module with legacy/modern `getUsers` overload detection.
+The APK uses `com.rifsxd.ksunext.z5157v` and a dedicated signing certificate;
+the KSU and KSU+SUSFS kernels enforce that package and certificate. The signing
+key is stored in repository Actions secrets, with only its public certificate
+and configuration committed. Existing latest-source workflows are unchanged.

@@ -1,0 +1,94 @@
+name: Z5157V Android 10 manager and kernels
+
+on:
+  push:
+    branches: [ksu-v108-android10-manager]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: z5157v-manager-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  stock:
+    name: Stock
+    uses: ./.github/workflows/kernel-variant.yml
+    with:
+      variant: stock
+      kernel_ref: main
+      anykernel_ref: 41f04bdb4ee30a44e429c2c1131d5e8bb32b15f1
+
+  manager:
+    name: Android 10 manager
+    needs: stock
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set build directory
+        run: echo "MANAGER_WORK=$RUNNER_TEMP/z5157v-manager" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android build tools
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install
+          'platforms;android-36' 'build-tools;35.0.0' 'ndk;28.1.13356709' 'cmake;3.22.1'
+      - name: Restore manager signing key
+        env:
+          MANAGER_KEYSTORE_B64: ${{ secrets.Z5157V_MANAGER_KEYSTORE_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          value = os.environ['MANAGER_KEYSTORE_B64']
+          if not value:
+              raise SystemExit('Z5157V_MANAGER_KEYSTORE_B64 is required')
+          path = Path(os.environ['RUNNER_TEMP']) / 'z5157v-manager.p12'
+          path.write_bytes(base64.b64decode(value, validate=True))
+          path.chmod(0o600)
+          PY
+      - name: Build and sign matching manager
+        env:
+          MANAGER_KEYSTORE_PASSWORD: ${{ secrets.Z5157V_MANAGER_KEYSTORE_PASSWORD }}
+        run: >-
+          python3 ci/manager.py --work "$MANAGER_WORK"
+          --keystore "$RUNNER_TEMP/z5157v-manager.p12"
+      - name: Upload manager and build reports
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: z5157v-android10-manager-${{ github.run_id }}
+          path: ${{ env.MANAGER_WORK }}/reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  ksu:
+    name: KernelSU Next
+    needs: [stock, manager]
+    uses: ./.github/workflows/kernel-variant.yml
+    with:
+      variant: ksu
+      kernel_ref: ${{ needs.stock.outputs.kernel_revision }}
+      ksu_ref: 9d9f9ed5d5f3a66a2f44e24c926075554f9275ce
+      anykernel_ref: 41f04bdb4ee30a44e429c2c1131d5e8bb32b15f1
+      manager_config: ci/manager/manager.json
+
+  ksu-susfs:
+    name: KernelSU Next and SUSFS
+    needs: [stock, manager, ksu]
+    if: ${{ !cancelled() && needs.stock.result == 'success' && needs.manager.result == 'success' }}
+    uses: ./.github/workflows/kernel-variant.yml
+    with:
+      variant: ksu-susfs
+      kernel_ref: ${{ needs.stock.outputs.kernel_revision }}
+      ksu_ref: 9d9f9ed5d5f3a66a2f44e24c926075554f9275ce
+      susfs_ref: 41ba0b533b8524a0ba95a5952506a75f17355450
+      anykernel_ref: 41f04bdb4ee30a44e429c2c1131d5e8bb32b15f1
+      manager_config: ci/manager/manager.json

@@ -150,6 +150,20 @@ def build(args, report, logs):
     prefix = str(toolchain / "bin/arm-linux-androideabi-")
     out = args.work / "out"
     make = ["make", f"O={out}", "ARCH=arm", f"CROSS_COMPILE={prefix}", "HOSTCFLAGS=-O2 -fcommon"]
+    if args.manager_config:
+        manager = json.loads(args.manager_config.read_text())
+        if args.variant == "stock" or report.get("ksu_revision") != manager["ksu_revision"]:
+            raise RuntimeError("The manager configuration does not match this KernelSU revision")
+        if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_.]{1,127}", manager["package"]):
+            raise ValueError("Invalid manager package")
+        if not re.fullmatch(r"[a-f0-9]{64}", manager["certificate_sha256"]):
+            raise ValueError("Invalid manager certificate hash")
+        if not 0 < manager["certificate_size"] <= 1024:
+            raise ValueError("Invalid manager certificate size")
+        make += [f"KSU_NEXT_EXPECTED_SIZE={manager['certificate_size']}",
+                 f"KSU_NEXT_EXPECTED_HASH={manager['certificate_sha256']}",
+                 f"KSU_MANAGER_PACKAGE={manager['package']}"]
+        report["manager"] = manager
     run([*make, "z5157v_defconfig"], src, logs / "configure.log")
     values = config_values(out / ".config")
     expected = {"KSU": args.variant != "stock", "KSU_SUSFS": args.variant == "ksu-susfs",
@@ -224,6 +238,7 @@ def main():
     parser.add_argument("--ksu-ref", default="legacy")
     parser.add_argument("--susfs-ref", default="kernel-4.9-v2")
     parser.add_argument("--toolchain", help="Existing verified toolchain for local checks")
+    parser.add_argument("--manager-config", type=Path, help="Public certificate and package configuration for a matching manager")
     parser.add_argument("--jobs", type=int, default=max(1, os.cpu_count() or 1))
     parser.add_argument("--summary", type=Path)
     args = parser.parse_args()

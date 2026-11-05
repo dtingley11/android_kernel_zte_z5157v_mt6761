@@ -22,6 +22,9 @@ on:
       susfs_ref:
         default: kernel-4.9-v2
         type: string
+      manager_config:
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -38,6 +41,7 @@ jobs:
       KSU_REF: ${{ inputs.ksu_ref }}
       SUSFS_REF: ${{ inputs.susfs_ref }}
       ANYKERNEL_REF: ${{ inputs.anykernel_ref }}
+      MANAGER_CONFIG: ${{ inputs.manager_config }}
     steps:
       - name: Set build directory
         run: echo "BUILD_WORK=$RUNNER_TEMP/z5157v-$VARIANT" >> "$GITHUB_ENV"
@@ -59,7 +63,12 @@ jobs:
           sudo apt-get install -y bc bison build-essential flex libelf-dev libssl-dev libncurses-dev python-is-python3
 
       - name: Build kernel and modules
-        run: python3 ci/build.py build --variant "$VARIANT" --work "$BUILD_WORK"
+        run: |
+          manager_args=()
+          if [ -n "$MANAGER_CONFIG" ]; then
+            manager_args+=(--manager-config "$MANAGER_CONFIG")
+          fi
+          python3 ci/build.py build --variant "$VARIANT" --work "$BUILD_WORK" "${manager_args[@]}"
 
       - name: Package with AnyKernel3
         run: >-
