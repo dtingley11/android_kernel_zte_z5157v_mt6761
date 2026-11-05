@@ -2,7 +2,7 @@ name: Z5157V Android 10 manager and kernels
 
 on:
   push:
-    branches: [ksu-v108-android10-manager, ksu-v108-module-startup]
+    branches: [ksu_added]
   workflow_dispatch:
     inputs:
       stock_uname:

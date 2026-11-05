@@ -2,7 +2,7 @@ name: Z5157V kernel builds
 
 on:
   push:
-    branches: [main, ksu_added]
+    branches: [main]
   workflow_dispatch:
     inputs:
       stock_uname:
