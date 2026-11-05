@@ -41,7 +41,11 @@ static ssize_t read_one(bool iter,struct file *file,loff_t *pos,char *buf,size_t
     struct kiocb io={file,*pos};struct iov_iter to={buf,count};
     ssize_t n=read_iter_proxy(&io,&to);*pos=io.pos;return n;
 }
-int main(void) {
+int main(int argc, char **argv) {
+    if(argc==2 && !strcmp(argv[1],"--dump-rc")) {
+        fputs(KERNEL_SU_RC,stdout);
+        return 0;
+    }
     char body[34300];for(size_t i=0;i<sizeof(body);i++)body[i]='a'+i%26;
     const size_t sizes[]={1,2,7,64,1024,4096,32768};
     for(int iter=0;iter<2;iter++) {

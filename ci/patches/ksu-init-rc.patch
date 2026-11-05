@@ -1,5 +1,4 @@
 diff --git a/ksud.c b/ksud.c
-index 5402c5f..30a5f84 100644
 --- a/ksud.c
 +++ b/ksud.c
 @@ -18,6 +18,7 @@
@@ -10,7 +9,42 @@ index 5402c5f..30a5f84 100644
  #include <linux/workqueue.h>
  
  #include "allowlist.h"
-@@ -286,130 +287,110 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
+@@ -27,25 +28,30 @@
+ #include "kernel_compat.h"
+ #include "selinux/selinux.h"
+ 
++/*
++ * This 4.9 kernel rejects unbounded SELinux transitions from nosuid /data.
++ * Enter su through the executable system shell before exec'ing the daemon.
++ * Keep /data nosuid and the SELinux transition checks unchanged.
++ */
+ static const char KERNEL_SU_RC[] =
+ 	"\n"
+ 
+ 	"on post-fs-data\n"
+ 	"    start logd\n"
+ 	// We should wait for the post-fs-data finish
+-	"    exec u:r:su:s0 root -- " KSUD_PATH " post-fs-data\n"
++	"    exec u:r:su:s0 root -- /system/bin/sh -c \"exec " KSUD_PATH " post-fs-data\"\n"
+ 	"\n"
+ 
+ 	"on nonencrypted\n"
+-	"    exec u:r:su:s0 root -- " KSUD_PATH " services\n"
++	"    exec u:r:su:s0 root -- /system/bin/sh -c \"exec " KSUD_PATH " services\"\n"
+ 	"\n"
+ 
+ 	"on property:vold.decrypt=trigger_restart_framework\n"
+-	"    exec u:r:su:s0 root -- " KSUD_PATH " services\n"
++	"    exec u:r:su:s0 root -- /system/bin/sh -c \"exec " KSUD_PATH " services\"\n"
+ 	"\n"
+ 
+ 	"on property:sys.boot_completed=1\n"
+-	"    exec u:r:su:s0 root -- " KSUD_PATH " boot-completed\n"
++	"    exec u:r:su:s0 root -- /system/bin/sh -c \"exec " KSUD_PATH " boot-completed\"\n"
+ 	"\n"
+ 
+ 	"\n";
+@@ -286,130 +292,110 @@
  	return 0;
  }
  
@@ -29,8 +63,7 @@ index 5402c5f..30a5f84 100644
  
  static ssize_t read_proxy(struct file *file, char __user *buf, size_t count,
 -			  loff_t *pos)
-+                          loff_t *pos)
- {
+-{
 -	bool first_read = file->f_pos == 0;
 -	ssize_t ret = orig_read(file, buf, count, pos);
 -	if (first_read) {
@@ -39,6 +72,8 @@ index 5402c5f..30a5f84 100644
 -		ret += read_count_append;
 -	}
 -	return ret;
++                          loff_t *pos)
++{
 +    ssize_t ret;
 +    size_t bytes, copied;
 +
@@ -87,12 +122,28 @@ index 5402c5f..30a5f84 100644
 +        return -EFAULT;
 +    ksu_rc_pos += copied;
 +    return copied;
++}
++
++static bool is_init_rc(struct file *file)
++{
++    char path[256];
++    char *name;
++
++    if (strcmp(current->comm, "init") || IS_ERR_OR_NULL(file))
++        return false;
++    if (!S_ISREG(file_inode(file)->i_mode) ||
++        strcmp(file->f_path.dentry->d_name.name, "init.rc"))
++        return false;
++    name = d_path(&file->f_path, path, sizeof(path));
++    if (IS_ERR(name))
++        return false;
++    return !strcmp(name, "/init.rc") ||
++           !strcmp(name, "/system/etc/init/hw/init.rc");
  }
  
--int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
+ int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
 -			size_t *count_ptr, loff_t **pos)
-+static bool is_init_rc(struct file *file)
- {
+-{
 -#ifndef CONFIG_KSU_KPROBES_HOOK
 -	if (!ksu_vfs_read_hook) {
 -		return 0;
@@ -182,23 +233,8 @@ index 5402c5f..30a5f84 100644
 -
 -	*buf_ptr = buf + rc_count;
 -	*count_ptr = count - rc_count;
-+    char path[256];
-+    char *name;
-+
-+    if (strcmp(current->comm, "init") || IS_ERR_OR_NULL(file))
-+        return false;
-+    if (!S_ISREG(file_inode(file)->i_mode) ||
-+        strcmp(file->f_path.dentry->d_name.name, "init.rc"))
-+        return false;
-+    name = d_path(&file->f_path, path, sizeof(path));
-+    if (IS_ERR(name))
-+        return false;
-+    return !strcmp(name, "/init.rc") ||
-+           !strcmp(name, "/system/etc/init/hw/init.rc");
-+}
- 
+-
 -	return 0;
-+int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
 +                       size_t *count_ptr, loff_t **pos)
 +{
 +    static bool rc_hooked;

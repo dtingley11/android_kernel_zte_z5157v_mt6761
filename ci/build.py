@@ -126,6 +126,7 @@ def prepare(args, report, logs):
     if not apply_patch(kernel, "ksu-init-rc.patch", logs):
         raise RuntimeError("KernelSU init.rc EOF proxy backport does not apply")
     report["init_rc_proxy_upstream_revision"] = "b933b1f728116a456fbebf27b6a8772a640cdf23"
+    report["init_rc_launcher"] = "system-shell"
     if not apply_patch(src, "kernel-ksu.patch", logs):
         raise RuntimeError("KernelSU source hooks do not apply to the device tree")
     if args.variant == "ksu-susfs" and not apply_patch(src, "kernel-susfs.patch", logs):

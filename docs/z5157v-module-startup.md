@@ -3,8 +3,7 @@
 On the phone, root grants and SUSFS v1.5.5 version/feature queries work.
 Installed modules remain in `/data/adb/modules_update` with update markers,
 and the daemon's boot-log directory is absent. A second module has the same
-activation problem. This indicates a general boot-stage problem, rather
-than successful module activation.
+activation problem. Both depend on the daemon running at boot.
 
 The v1.0.8 integration depended on intercepting `atrace.rc`. This branch
 backports the main `init.rc` EOF-appending design from KernelSU Next legacy
@@ -13,8 +12,23 @@ manual-hook interface. It recognizes `/init.rc` and
 `/system/etc/init/hw/init.rc`. Original contents are returned unchanged;
 KSU's boot actions are appended after EOF. Short buffers, zero-length reads,
 read failures and partial user-copy faults are tested against the actual
-proxy functions for both read APIs. Device boot-stage execution still needs
-verification with this updated kernel.
+proxy functions for both read APIs. Device logs from the updated kernel
+confirm init parses these actions and attempts all three boot stages.
+
+The remaining failure is `cannot execve('/data/adb/ksud'): Permission denied`.
+This vendor kernel's `check_nnp_nosuid()` rejects unbounded SELinux transitions
+on nosuid mounts. `/data` is nosuid, so the explicit init-to-su transition
+fails before the daemon runs. Root shells already in the su domain can
+execute the same daemon.
+
+The boot actions now enter the su domain through `/system/bin/sh`, then
+`exec` the daemon with the original stage argument. The second execution
+stays in the same domain. This keeps `/data` nosuid, SELinux enforcing and
+the kernel's transition checks unchanged. `exec-probe.c` reproduced the
+direct-launch denial and verified the shell launch succeeds on the phone,
+using only `ksud --version` in an isolated child. Host tests verify command
+quoting and stage arguments. Full boot-stage execution with the final
+kernel still needs a reboot test.
 
 The installed SUSFS R28 module also contains an ARM64-only `ksu_susfs`, which
 cannot execute on the Z5157V's ARM32 kernel. Its updater downloads the same
