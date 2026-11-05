@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "esbuild": "0.28.2"
+  },
+  "name": "z5157v-susfs-webui",
+  "private": true,
+  "version": "1.0.0"
+}

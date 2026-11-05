@@ -53,3 +53,18 @@ at boot. After installing the updated kernel and ARM32 module, verify a
 full reboot clears staging, produces KSU boot logs, and runs the module's
 post-fs-data/service stages. Update flags must not be removed just to change
 the manager's pending label.
+
+## SUSFS WebUI on Android 10
+
+The stock WebView is 74.0.3729.186. R28 uses top-level await and newer class
+syntax, so its feature-status link can remain hidden when the main script
+cannot run. The compatibility package bundles the original frontend for
+Chrome 74, moves initialization into an async function and obtains its
+feature-gating version directly from the kernel. It preserves the original
+status rules and settings. The build uses esbuild 0.28.2 with a lockfile.
+
+Device checks confirmed module activation, all four boot-script stages,
+SUSFS v1.5.5 feature queries, automatic marking of KSU mounts and per-app
+unmount activity. The rebuilt feature-status page rendered on WebView 74
+and matched the seven enabled kernel features. Other spoofing features
+still need individual runtime tests; enabled status is a capability query.

@@ -53,8 +53,8 @@ ui_print 'Installed ARM32 SUSFS v1.5.5 tool; SUS_SU is unavailable with this man
  customize.write_text(text)
  prop=stage/'module.prop';text=prop.read_text()
  text=text.replace('name=SUSFS-FOR-KERNELSU','name=SUSFS-FOR-KERNELSU (ARM32 v1.5.5)')
- text=text.replace('version=v1.5.2-R28','version=v1.5.2-R28-arm32-v1.5.5')
- text=text.replace('versionCode=105002028','versionCode=105002029')
+ text=text.replace('version=v1.5.2-R28','version=v1.5.2-R28-arm32-v1.5.5-wv74')
+ text=text.replace('versionCode=105002028','versionCode=105002030')
  text='\n'.join(line for line in text.splitlines() if not line.startswith('updateJson='))+'\n';prop.write_text(text)
  config=stage/'config.sh';text=config.read_text().replace('sus_su=2','sus_su=-1');config.write_text(text)
  tool_hash=hashlib.sha256(data).hexdigest()
@@ -64,10 +64,13 @@ ui_print 'Installed ARM32 SUSFS v1.5.5 tool; SUS_SU is unavailable with this man
   (stage/name).write_text(updater)
  provenance={'module_source_url':URL,'module_source_sha256':SHA,'susfs_revision':SUSFS,'tool_abi':'armeabi-v7a','tool_sha256':tool_hash,'kernel_version_required':'v1.5.5','sus_su_supported':False}
  (stage/'ARM32-BUILD.json').write_text(json.dumps(provenance,indent=2)+'\n')
+ subprocess.run(['node',str(ROOT/'ci/webui/build.mjs'),str(stage/'webroot')],check=True)
+ provenance['webview_target']='chrome74'
+ (stage/'ARM32-BUILD.json').write_text(json.dumps(provenance,indent=2)+'\n')
  for script in stage.glob('*.sh'):
   if 'ksu_susfs_arm64' in script.read_text():raise RuntimeError('ARM64 download remains in '+script.name)
   subprocess.run(['sh','-n',str(script)],check=True)
- archive=args.out/'SUSFS-R28-Z5157V-ARM32-v1.5.5.zip'
+ archive=args.out/'SUSFS-R28-Z5157V-ARM32-v1.5.5-WebView74.zip'
  with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
   for f in sorted(stage.rglob('*')):
    if f.is_file():z.write(f,str(f.relative_to(stage)))
