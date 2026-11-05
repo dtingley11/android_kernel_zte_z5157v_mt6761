@@ -161,7 +161,7 @@ static __always_inline bool check_v2_signature(char *path,
 
 	struct file *fp = ksu_filp_open_nonotify(path, O_RDONLY | O_NOATIME);
 	if (IS_ERR(fp)) {
-		pr_err("open %s error.\n", path);
+		pr_err("open %s failed: %ld\n", path, PTR_ERR(fp));
 		return false;
 	}
 

@@ -42,6 +42,9 @@ use shared UAPI version 5.
 - In-place policy changes advance the SELinux security-server generation before
   notifying AVC, netlink and status-page listeners. A host regression check covers
   repeated module updates and policy reloads.
+- Manager tracking retries failed APK verification without caching an unverified
+  path. Boot completion retries discovery; an unchanged, verified UID keeps its
+  existing fast path. Package and certificate checks remain required.
 - Init services use the system-shell launcher needed for this device's nosuid
   `/data`, with the current `ksu` SELinux domain. Core and optional module RC
   appending account for partial copies and short reads.

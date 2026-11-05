@@ -71,3 +71,14 @@ reset = rules[start:rules.index('\n#ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS', s
 subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-I', str(a.work),
                 str(Path(__file__).with_name('policy-sequence.c')), '-o', str(a.work / 'policy-sequence')], check=True)
 subprocess.run([str(a.work / 'policy-sequence')], check=True)
+
+tracker = (ROOT / 'KernelSU-Next/kernel/manager/throne_tracker.c').read_text()
+(a.work / 'actual-manager-retry.inc').write_text(tracker[tracker.index('static DEFINE_MUTEX('):])
+subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
+                '-I', str(a.work), str(Path(__file__).with_name('manager-retry.c')),
+                '-o', str(a.work / 'manager-retry')], check=True)
+subprocess.run([str(a.work / 'manager-retry')], check=True)
+boot = (ROOT / 'KernelSU-Next/kernel/runtime/boot_event.c').read_text()
+boot = boot[boot.index('void on_boot_completed(void)'):]
+assert 'track_throne(false);' in boot and 'track_throne(true);' not in boot
+print('PASS: boot completion retries manager verification')
