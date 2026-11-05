@@ -4,6 +4,10 @@
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
 
+#ifdef CONFIG_KSU_MANUAL_HOOK
+#include <linux/ksu_hooks.h>
+#endif
+
 #include <linux/export.h>
 #include <linux/mm.h>
 #include <linux/errno.h>
@@ -93,6 +97,10 @@ int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
 	struct path path;
 	int error = -EINVAL;
 	unsigned int lookup_flags = 0;
+
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_stat(&dfd, &filename, &flag);
+#endif
 
 	if ((flag & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
 		      AT_EMPTY_PATH)) != 0)

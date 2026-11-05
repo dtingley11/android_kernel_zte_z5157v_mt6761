@@ -6,35 +6,45 @@
 #include <linux/sched.h>
 #include <linux/workqueue.h>
 
+#include "preinit/preinit.h"
 #include "policy/allowlist.h"
 #include "policy/app_profile.h"
 #include "policy/feature.h"
 #include "klog.h" // IWYU pragma: keep
 #include "manager/manager_observer.h"
 #include "manager/throne_tracker.h"
-#include "hook/syscall_hook_manager.h"
-#include "hook/lsm_hook.h"
+#include "hook/hook_manager.h"
 #include "runtime/ksud.h"
 #include "runtime/ksud_boot.h"
 #include "supercall/supercall.h"
 #include "ksu.h"
+#include "feature/sulog.h"
 #include "infra/file_wrapper.h"
 #include "selinux/selinux.h"
-#include "hook/syscall_hook.h"
-#include "feature/adb_root.h"
 #include "feature/selinux_hide.h"
-#include "feature/module_blacklist.h"
 #include "feature/shell_su_adb_only.h"
-#include "feature/sulog.h"
-#include "infra/symbol_resolver.h"
+#include "feature/adb_root.h"
 
-#if defined(__x86_64__) && !defined(CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER)
-#include <asm/cpufeature.h>
-#include <linux/version.h>
-#ifndef X86_FEATURE_INDIRECT_SAFE
-#error "FATAL: Your kernel is missing the indirect syscall bypass patches!"
-#endif
-#endif
+extern void __init ksu_lsm_hook_init(void);
+extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+					void *argv, void *envp, int *flags);
+
+/*
+ * The manual call site in fs/exec.c (__do_execve_file) already hands us
+ * struct user_arg_ptr values, so pass them straight through with their real
+ * type. Declaring the parameter as void* here while ksud_integration.c
+ * defines it as struct user_arg_ptr* is a conflicting declaration of the
+ * same symbol.
+ */
+int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+			void *envp, int *flags)
+{
+	ksu_handle_execveat_ksud(fd, filename_ptr,
+				 (struct user_arg_ptr *)argv,
+				 (struct user_arg_ptr *)envp, flags);
+	return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
+					    flags);
+}
 
 // workaround for A12-5.10 kernel
 // Some third-party kernel (e.g. linegaeOS) uses wrong toolchain, which supports
@@ -98,22 +108,6 @@ int __init kernelsu_init(void)
 #else
 	pr_info("welcome to KernelSU version " __stringify(KERNEL_SU_VERSION) "\n");
 #endif
-#if defined(__x86_64__) && !defined(CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER)
-    // If the kernel has the hardening patch, X86_FEATURE_INDIRECT_SAFE must be set
-    if (!boot_cpu_has(X86_FEATURE_INDIRECT_SAFE)) {
-        pr_alert("*************************************************************");
-        pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-        pr_alert("**                                                         **");
-        pr_alert("**        X86_FEATURE_INDIRECT_SAFE is not enabled!        **");
-        pr_alert("**      KernelSU will abort initialization to prevent      **");
-        pr_alert("**                     kernel panic.                       **");
-        pr_alert("**                                                         **");
-        pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-        pr_alert("*************************************************************");
-        return -ENOSYS;
-    }
-#endif
-
 #ifdef MODULE
 	ksu_late_loaded = (current->pid != 1);
 #else
@@ -129,30 +123,33 @@ int __init kernelsu_init(void)
 	pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
 	pr_alert("*************************************************************");
 #endif
+
 	if (allow_shell) {
 		pr_alert("shell is allowed at init!");
 	}
 
-	ksu_cred = prepare_creds();
-	if (!ksu_cred) {
-		pr_err("prepare cred failed!\n");
-		return -ENOSYS;
-	}
-
-	ksu_init_symbol_resolver();
-	ksu_syscall_hook_init();
-
-	// Block modules early, before vendor modules are loaded in second stage.
-	ksu_module_blacklist_init();
+    ksu_cred = prepare_creds();
+    if (!ksu_cred) {
+        pr_err("prepare cred failed!\n");
+        return -ENOSYS;
+    }
 
 	ksu_feature_init();
+
 	ksu_sulog_init();
+
 	ksu_adb_root_init();
-	ksu_lsm_hook_init();
-	ksu_selinux_hide_init();
+
 	ksu_shell_su_adb_only_init();
 
+	ksu_feature_apply_forced();
+
+	ksu_lsm_hook_init();
+
+	ksu_selinux_hide_init();
+
 	ksu_supercalls_init();
+
 	ksu_app_profile_init();
 
 	if (ksu_late_loaded) {
@@ -179,8 +176,6 @@ int __init kernelsu_init(void)
 		ksu_boot_completed = true;
 		track_throne(false);
 
-		ksu_feature_apply_forced();
-
 		if (!getenforce()) {
 			pr_info("Permissive SELinux, enforcing\n");
 			setenforce(true);
@@ -194,6 +189,8 @@ int __init kernelsu_init(void)
 		ksu_throne_tracker_init();
 
 		ksu_ksud_init();
+
+		ksu_preinit_init();
 
 		ksu_file_wrapper_init();
 	}
@@ -213,8 +210,10 @@ void __exit kernelsu_exit(void)
 
 	ksu_supercalls_exit();
 
-	if (!ksu_late_loaded)
+	if (!ksu_late_loaded) {
 		ksu_ksud_exit();
+		ksu_preinit_exit();
+	}
 
 	// Wait for any in-flight RCU readers (e.g. handler traversing allow_list)
 	synchronize_rcu();
@@ -226,15 +225,19 @@ void __exit kernelsu_exit(void)
 
 	ksu_allowlist_exit();
 
-	ksu_shell_su_adb_only_exit();
 	ksu_selinux_hide_exit();
-	ksu_lsm_hook_exit();
-	ksu_adb_root_exit();
-	ksu_sulog_exit();
-	ksu_feature_exit();
-	ksu_module_blacklist_exit();
 
-	put_cred(ksu_cred);
+	ksu_sulog_exit();
+
+	ksu_adb_root_exit();
+
+	ksu_shell_su_adb_only_exit();
+
+	ksu_feature_exit();
+
+	if (ksu_cred) {
+		put_cred(ksu_cred);
+	}
 }
 
 #if NEED_OWN_STACKPROTECTOR

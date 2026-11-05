@@ -1,8 +1,8 @@
-name: KernelSU Next v3.4.2 ARM32 experiment
+name: KernelSU Next legacy ARM32 experiment
 
 on:
   push:
-    branches: [ksu-next-v3.4.2-arm32-experimental]
+    branches: [ksu-next-latest-arm32-experimental]
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex libelf-dev libssl-dev libncurses-dev python-is-python3
       - name: Install Android NDK
-        if: matrix.component != 'kernel'
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;29.0.14206865'
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"

@@ -1,4 +1,5 @@
 #include "util.h"
+#include "compat/kernel_compat.h"
 #include <linux/err.h>
 #include <linux/fs.h>
 #include <linux/gfp.h>
@@ -16,11 +17,7 @@
 #include <crypto/sha.h>
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
-#include <linux/kernel.h>
-#else
 #include <linux/hex.h>
-#endif
 #endif
 
 #include "manager/apk_sign.h"
@@ -84,7 +81,7 @@ static bool read_exact(struct file *fp, void *buffer, size_t size, loff_t *pos, 
 	if (*pos < 0 || *pos > end || size > (size_t)(end - *pos))
 		return false;
 
-	return kernel_read(fp, buffer, size, pos) == (ssize_t)size;
+	return ksu_kernel_read_compat(fp, buffer, size, pos) == (ssize_t)size;
 }
 
 static bool read_length_prefixed_end(struct file *fp, loff_t *pos, loff_t container_end, loff_t *value_end)
@@ -162,7 +159,6 @@ static __always_inline bool check_v2_signature(char *path,
 	bool v2_signing_valid = false;
 	int v2_signing_blocks = 0;
 
-	int i;
 	struct file *fp = ksu_filp_open_nonotify(path, O_RDONLY | O_NOATIME);
 	if (IS_ERR(fp)) {
 		pr_err("open %s error.\n", path);
@@ -174,22 +170,58 @@ static __always_inline bool check_v2_signature(char *path,
 		goto clean;
 
 	// https://en.wikipedia.org/wiki/Zip_(file_format)#End_of_central_directory_record_(EOCD)
-	for (i = 0;; ++i) {
-		unsigned short comment_size;
-		u32 magic;
-		pos = file_size - i - 2;
-		if (!read_exact(fp, &comment_size, sizeof(comment_size), &pos, file_size))
+	// Buffered backward search (single read) instead of the upstream
+	// byte-by-byte loop: scanning /data/app at boot with thousands of
+	// 2-byte ksu_kernel_read_compat() calls stalls the device for ages.
+	{
+		unsigned char *eocd_buffer;
+		long search_size;
+		long max_comment_size = 0xffff;
+		long eocd_min_size = 22;
+		bool eocd_found = false;
+
+		search_size = max_comment_size + eocd_min_size;
+		if (search_size > file_size)
+			search_size = file_size;
+
+		eocd_buffer = kvmalloc(search_size, GFP_KERNEL);
+		if (!eocd_buffer) {
+			pr_err("error: cannot allocate memory for eocd\n");
 			goto clean;
-		if (comment_size == i) {
-			pos -= 22;
-			if (!read_exact(fp, &magic, sizeof(magic), &pos, file_size))
-				goto clean;
-			if (magic == 0x06054b50) {
-				eocd_offset = pos - sizeof(magic);
-				break;
+		}
+		memset(eocd_buffer, 0, search_size);
+
+		pos = file_size - search_size;
+		if (ksu_kernel_read_compat(fp, eocd_buffer, search_size, &pos) != search_size) {
+			kvfree(eocd_buffer);
+			goto clean;
+		}
+
+		if (search_size >= eocd_min_size) {
+			long j;
+			for (j = search_size - eocd_min_size; j >= 0; j--) {
+				if (eocd_buffer[j] == 0x50 &&
+				    eocd_buffer[j + 1] == 0x4b &&
+				    eocd_buffer[j + 2] == 0x05 &&
+				    eocd_buffer[j + 3] == 0x06) {
+					unsigned short comment_len =
+						eocd_buffer[j + 20] |
+						(eocd_buffer[j + 21] << 8);
+					if (comment_len ==
+					    search_size - j - eocd_min_size) {
+						eocd_offset =
+							file_size - search_size +
+							j;
+						eocd_found = true;
+						break;
+					}
+				}
 			}
 		}
-		if (i == 0xffff) {
+
+		kvfree(eocd_buffer);
+
+		if (!eocd_found) {
 			pr_info("error: cannot find eocd\n");
 			goto clean;
 		}
@@ -314,6 +346,7 @@ int get_pkg_from_apk_dir_path(char *pkg, const char *path)
 		return -1;
 
 	const char *last_slash = strrchr(path, '/');
+
 	if (!last_slash)
 		return -1;
 

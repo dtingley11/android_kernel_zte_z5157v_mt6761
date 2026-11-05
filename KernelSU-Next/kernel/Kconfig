@@ -1,21 +1,17 @@
 menu "KernelSU"
 
 config KSU_ARM32_EXPERIMENTAL
-	bool "Attempt the experimental ARM32 port of KernelSU Next"
+	bool "Experimental Z5157V ARM32 port"
 	depends on ARM && !KPROBES
 	default n
-	help
-	  Development only: the manual-hook and Linux 4.9 port is incomplete.
-	  This option permits compiler diagnostics without enabling kprobes.
 
 config KSU
 	tristate "KernelSU function support"
-	depends on (KPROBES || KSU_ARM32_EXPERIMENTAL) && EXT4_FS
+	depends on !ARM || KSU_ARM32_EXPERIMENTAL
 	default y
 	help
 	  Enable kernel-level root privileges on Android System.
-	  Requires CONFIG_KPROBES for kernel hooking support.
-	  Requires CONFIG_EXT4_FS for `ext4_unregister_sysfs`.
+	  Use manual hooks for this ARM32 port.
 	  To compile as a module, choose M here: the
 	  module will be called kernelsu.
 
@@ -43,12 +39,43 @@ config KSU_DISABLE_POLICY
 	  Escalation will always use the default full root profile, and
 	  non-root handling will follow the global umount policy only.
 
-config KSU_X86_PATCH_SYSCALL_DISPATCHER
-	bool "Dynamically patch x64's hardened syscall dispatcher to support syscall hooks"
-	depends on KSU && X86_64
+config KSU_ALLOWLIST_WORKAROUND
+	bool "KernelSU allowlist workaround"
+	depends on KSU
 	default n
 	help
-	  Dynamically patch x64's hardened syscall dispatcher to support syscall hooks. This is a
-	  replacement for a kernel source code patch, and is useful for x86_64 LKM mode.
+	  Enable workaround for broken allowlist save
+
+# For easier extern ifdef handling
+config KSU_MANUAL_HOOK
+	bool "KernelSU manual hook mode."
+	depends on KSU && KSU != m
+	default y if !KPROBES
+	default n
+	help
+	  Enable manual hook support.
+
+choice
+	prompt "KernelSU dynamic hook mode"
+	depends on KSU && !KSU_MANUAL_HOOK
+	default KSU_KPROBES_HOOK
+
+config KSU_KPROBES_HOOK
+	bool "KernelSU tracepoint+kretprobe hook"
+	depends on KRETPROBES && KPROBES && HAVE_SYSCALL_TRACEPOINTS
+	help
+	  Enable KPROBES, KRETPROBES and TRACEPOINT hook for KernelSU core.
+	  This should not be used on kernel below 5.10.
+
+config KSU_SYSCALL_TABLE_HOOK
+	bool "KernelSU syscall table patching hook"
+	depends on ARM64 || X86_64
+	help
+	  Patch sys_call_table entries directly to hook syscalls without
+	  kprobes or tracepoints. Intended for non-GKI kernels where kprobes
+	  are unavailable or non-functional.
+	  Requires kernel >= 4.17 (pt_regs-based syscall ABI).
+
+endchoice
 
 endmenu

@@ -97,7 +97,7 @@ int ksu_handle_slow_avc_audit(u32 *tsid)
 	return 0;
 }
 
-#ifdef CONFIG_KPROBES
+#ifdef KSU_KPROBES_HOOK
 #include <linux/kprobes.h>
 #include <linux/slab.h>
 #include "arch.h"
@@ -109,12 +109,12 @@ static int slow_avc_audit_pre_handler(struct kprobe *p, struct pt_regs *regs)
 	if (atomic_read(&disable_spoof))
 		return 0;
 
-	/* 
+	/*
 	 * for < 4.17 int slow_avc_audit(u32 ssid, u32 tsid
 	 * for >= 4.17 int slow_avc_audit(struct selinux_state *state, u32 ssid, u32 tsid
 	 * for >= 6.4 int slow_avc_audit(u32 ssid, u32 tsid
 	 * not to mention theres also DKSU_HAS_SELINUX_STATE
-	 * since its hard to make sure this selinux state thing 
+	 * since its hard to make sure this selinux state thing
 	 * cross crossing with 4.17 ~ 6.4's where slow_avc_audit
 	 * changes abi (tsid in arg2 vs arg3)
 	 */
@@ -159,11 +159,11 @@ static void destroy_kprobe(struct kprobe **kp_ptr)
 	kfree(kp);
 	*kp_ptr = NULL;
 }
-#endif // CONFIG_KPROBES
+#endif // KSU_KPROBES_HOOK
 
 void ksu_avc_spoof_disable(void)
 {
-#ifdef CONFIG_KPROBES
+#ifdef KSU_KPROBES_HOOK
 	pr_info("avc_spoof/exit: unregister slow_avc_audit kprobe!\n");
 	destroy_kprobe(&slow_avc_audit_kp);
 #endif
@@ -171,7 +171,7 @@ void ksu_avc_spoof_disable(void)
 	pr_info("avc_spoof/exit: slow_avc_audit spoofing disabled!\n");
 }
 
-void ksu_avc_spoof_enable(void) 
+void ksu_avc_spoof_enable(void)
 {
 	int ret = get_sid();
 	if (ret) {
@@ -179,20 +179,20 @@ void ksu_avc_spoof_enable(void)
 		return;
 	}
 
-#ifdef CONFIG_KPROBES
+#ifdef KSU_KPROBES_HOOK
 	pr_info("avc_spoof/init: register slow_avc_audit kprobe!\n");
 	slow_avc_audit_kp = init_kprobe("slow_avc_audit", slow_avc_audit_pre_handler);
-#endif	
+#endif
 	// once we get the sids, we can now enable the hook handler
 	atomic_set(&disable_spoof, 0);
-	
+
 	pr_info("avc_spoof/init: slow_avc_audit spoofing enabled!\n");
 }
 
 void ksu_avc_spoof_late_init(void)
 {
 	boot_completed = true;
-	
+
     if (ksu_avc_spoof_enabled) {
 		ksu_avc_spoof_enable();
 	}

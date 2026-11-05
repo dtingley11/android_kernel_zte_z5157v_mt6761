@@ -1,16 +1,13 @@
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 #include <linux/fs.h>
 #include <linux/nsproxy.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
-#include <linux/sched.h>
-#else
 #include <linux/sched/task.h>
-#endif
 #include <linux/uaccess.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include "klog.h" // IWYU pragma: keep
-#include "infra/seccomp_cache.h"
+#include "seccomp_cache.h"
 
 struct action_cache {
 	DECLARE_BITMAP(allow_native, SECCOMP_ARCH_NATIVE_NR);
@@ -67,3 +64,4 @@ void ksu_seccomp_allow_cache(struct seccomp_filter *filter, int nr)
     }
 #endif
 }
+#endif // #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)

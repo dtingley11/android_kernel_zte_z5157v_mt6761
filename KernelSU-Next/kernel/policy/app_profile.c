@@ -1,17 +1,11 @@
-#include "hook/patch_memory.h"
+#include <linux/version.h>
 #include "infra/symbol_resolver.h"
 #include "linux/kallsyms.h"
 #include <linux/capability.h>
 #include <linux/cred.h>
 #include <linux/sched.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
-#include <linux/sched.h>
-#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/user.h>
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
-#include <linux/sched.h>
-#else
 #include <linux/sched/signal.h>
 #endif
 #include <linux/seccomp.h>
@@ -25,7 +19,7 @@
 #include "klog.h" // IWYU pragma: keep
 #include "selinux/selinux.h"
 #include "infra/su_mount_ns.h"
-#include "hook/tp_marker.h"
+#include "hook/hook_manager.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
 static struct group_info root_groups = { .usage = REFCOUNT_INIT(2) };
@@ -64,7 +58,11 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
             put_group_info(group_info);
             return;
         }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
         group_info->gid[i] = kgid;
+#else
+        GROUP_AT(group_info, i) = kgid;
+#endif
     }
 
     groups_sort(group_info);
@@ -82,18 +80,22 @@ void seccomp_filter_release(struct task_struct *tsk);
     LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0)
 
 #if NEED_BACKPORT_COMPAT
+#include "hook/patch_memory.h"
 static bool has_call_to_spin_lock = false;
 #endif
 
-static void disable_seccomp(void)
+void disable_seccomp(void)
 {
-    struct task_struct *fake;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) ||                          \
+     defined(KSU_OPTIONAL_SECCOMP_FILTER_RELEASE))
+	struct task_struct *fake;
 
-    fake = kmalloc(sizeof(*fake), GFP_KERNEL);
-    if (!fake) {
-        pr_warn("failed to alloc fake task_struct\n");
-        return;
-    }
+	fake = kmalloc(sizeof(*fake), GFP_ATOMIC);
+	if (!fake) {
+		pr_err("%s: cannot allocate fake struct!\n", __func__);
+		return;
+	}
+#endif
 
     // Refer to kernel/seccomp.c: seccomp_set_mode_strict
     // When disabling Seccomp, ensure that current->sighand->siglock is held during the operation.
@@ -106,13 +108,23 @@ static void disable_seccomp(void)
     clear_thread_flag(TIF_SECCOMP);
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) ||                          \
+     defined(KSU_OPTIONAL_SECCOMP_FILTER_RELEASE))
     memcpy(fake, current, sizeof(*fake));
-
+    atomic_set(&current->seccomp.filter_count, 0);
+#endif
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0) &&                           \
+     !defined(KSU_OPTIONAL_SECCOMP_FILTER_RELEASE))
+    // put_seccomp_filter is allowed while we holding sighand
+    put_seccomp_filter(current);
+#endif
     current->seccomp.mode = 0;
     current->seccomp.filter = NULL;
-    atomic_set(&current->seccomp.filter_count, 0);
+
     spin_unlock_irq(&current->sighand->siglock);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) ||                          \
+     defined(KSU_OPTIONAL_SECCOMP_FILTER_RELEASE))
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
     // https://github.com/torvalds/linux/commit/bfafe5efa9754ebc991750da0bcca2a6694f3ed3#diff-45eb79a57536d8eccfc1436932f093eb5c0b60d9361c39edb46581ad313e8987R576-R577
     fake->flags |= PF_EXITING;
@@ -126,9 +138,9 @@ static void disable_seccomp(void)
     // https://github.com/torvalds/linux/commit/0d8315dddd2899f519fe1ca3d4d5cdaf44ea421e#diff-45eb79a57536d8eccfc1436932f093eb5c0b60d9361c39edb46581ad313e8987R556-R558
     fake->sighand = NULL;
 #endif
-
     seccomp_filter_release(fake);
     kfree(fake);
+#endif
 }
 
 int escape_with_root_profile(void)
@@ -148,11 +160,13 @@ int escape_with_root_profile(void)
 
     if (cred->euid.val == 0) {
         pr_warn("Already root, don't escape!\n");
+        ret = -EALREADY;
         goto out_abort_creds;
     }
 
     if (test_thread_flag(TIF_KSU_DISABLE_ESCAPE_WITH_ROOT)) {
         pr_warn("TIF_KSU_DISABLE_ESCAPE_WITH_ROOT found, don't escape!\n");
+        ret = -EPERM;
         goto out_abort_creds;
     }
 
@@ -219,9 +233,11 @@ int escape_with_root_profile(void)
         set_thread_flag(TIF_KSU_DISABLE_ESCAPE_WITH_ROOT);
     }
 
+#ifdef KSU_KPROBES_HOOK
     for_each_thread (p, t) {
         ksu_set_task_tracepoint_flag(t);
     }
+#endif
 
     setup_mount_ns(profile->namespaces);
     ksu_put_root_profile(profile);

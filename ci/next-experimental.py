@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build isolated v3.4.2 ARM32 components; never create a flashable package."""
+"""Build the experimental legacy kernel and v3.4.2 ARM32 components; never create a flashable package."""
 import argparse
 import hashlib
 import json
@@ -14,6 +14,7 @@ from build import TOOLCHAIN_SHA, TOOLCHAIN_URL, config_values, fetch
 ROOT = Path(__file__).resolve().parent.parent
 NEXT = ROOT / 'KernelSU-Next'
 REVISION = '4c706b5938665866ebe16944a481a7b91e3396af'
+KERNEL_REVISION = 'b933b1f728116a456fbebf27b6a8772a640cdf23'
 
 
 def run(command, logs, name, cwd=ROOT, env=None):
@@ -45,16 +46,58 @@ def build_kernel(args, logs, report):
             f'CROSS_COMPILE={toolchain}/bin/arm-linux-androideabi-', 'HOSTCFLAGS=-O2 -fcommon']
     run([*make, 'z5157v_next_experimental_defconfig'], logs, 'configure')
     values = config_values(out / '.config')
-    expected = {'KSU': 'y', 'KSU_ARM32_EXPERIMENTAL': 'y', 'KPROBES': 'n',
+    expected = {'KSU': 'y', 'KSU_ARM32_EXPERIMENTAL': 'y', 'KSU_MANUAL_HOOK': 'y',
+                'KSU_KPROBES_HOOK': 'n', 'KSU_SYSCALL_TABLE_HOOK': 'n', 'KPROBES': 'n',
+                'KSU_DEBUG': 'n', 'KSU_DISABLE_MANAGER': 'n', 'KSU_DISABLE_POLICY': 'n',
                 'SECURITY_SELINUX': 'y', 'SECURITY_SELINUX_BOOTPARAM_VALUE': '1',
                 'MODULE_SIG_FORCE': 'y'}
     for option, expected_value in expected.items():
         if values.get(option, 'n') != expected_value:
             raise RuntimeError(f'Unexpected CONFIG_{option}={values.get(option)}')
     report['configuration_checks'] = expected
-    # Keep going across object failures to expose independent porting blockers.
-    # No zImage/boot.img/AK3 is built, even if all objects eventually compile.
-    run([*make, '-k', f'-j{args.jobs}', 'KernelSU-Next/kernel/'], logs, 'kernel-objects')
+    run([sys.executable, ROOT / 'tools/testing/z5157v-next-legacy/run.py',
+         '--work', args.work / 'tests'], logs, 'host-checks')
+    run([*make, f'-j{args.jobs}', 'zImage-dtb', 'dtbs', 'modules'], logs, 'full-kernel')
+    unresolved = subprocess.check_output([str(toolchain / 'bin/arm-linux-androideabi-nm'),
+                                          '-u', str(out / 'vmlinux')], text=True)
+    (logs / 'undefined-symbols.txt').write_text(unresolved)
+    allowed = {'__ddp_mem_test', 'mlog_get_buffer', 'report_hub_dmd'}
+    for line in unresolved.splitlines():
+        kind, name = line.split()
+        if kind != 'w' or name not in allowed:
+            raise RuntimeError(f'Unexpected unresolved symbol: {line}')
+    symbols = subprocess.check_output([str(toolchain / 'bin/arm-linux-androideabi-nm'),
+                                       str(out / 'vmlinux')], text=True)
+    linked = {line.split()[-1] for line in symbols.splitlines() if line.split()}
+    required = {'ksu_handle_execveat', 'ksu_handle_faccessat', 'ksu_handle_stat',
+                'ksu_handle_vfs_read', 'ksu_handle_input_handle_event',
+                'ksu_handle_sys_reboot', 'ksu_lsm_hook_init', 'ksu_handle_setresuid',
+                'ksu_install_file_wrapper', 'ksu_inode_init_security_anon_compat'}
+    if not required <= linked:
+        raise RuntimeError(f'Missing linked interfaces: {sorted(required - linked)}')
+    report['linked_interfaces'] = sorted(required)
+    report['unresolved_symbols'] = [line.split()[-1] for line in unresolved.splitlines()]
+    report['kernel_version_code'] = 33318
+    minimum_source = (NEXT / 'manager/app/src/main/java/com/rifsxd/ksunext/Natives.kt').read_text()
+    import re
+    minimum = int(re.search(r'MINIMAL_SUPPORTED_KERNEL = (\d+)', minimum_source).group(1))
+    if minimum > 33318:
+        raise RuntimeError('Manager requires a newer kernel control interface')
+    report['manager_minimum_kernel_version'] = minimum
+    ndk_environment(args)
+    run([sys.executable, ROOT / 'tools/testing/z5157v-next-legacy/abi.py',
+         '--ndk', args.ndk, '--gcc', toolchain, '--work', args.work / 'abi'], logs, 'uapi-abi')
+    identity = json.loads((ROOT / 'ci/stock-uname.json').read_text())
+    image = (out / 'arch/arm/boot/Image').read_bytes()
+    for field in ('release', 'version'):
+        if identity[field].encode().ljust(65, b'\0') not in image:
+            raise RuntimeError(f'Actual kernel UTS {field} differs from stock')
+    report['uname'] = identity
+    check_arm_elf(out / 'vmlinux')
+    report['outputs'] = [{'file': str(path.relative_to(out)),
+                          'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                         for path in [out / 'vmlinux', out / 'arch/arm/boot/Image',
+                                      out / 'arch/arm/boot/zImage-dtb', out / 'arch/arm/boot/mtk.dtb']]
 
 
 def ndk_environment(args):
@@ -75,6 +118,8 @@ def build_native(args, logs, report):
     common = [compiler, '-std=c++17', '-fPIC', '-shared']
     run([*common, '-I', NEXT, cpp / 'ksu.cc', cpp / 'jni.cc', '-llog', '-o', out / 'libkernelsu.so'], logs, 'native-manager')
     run([*common, cpp / 'adbroot.cc', '-llog', '-ldl', '-o', out / 'libadbroot.so'], logs, 'native-adbroot')
+    run([sys.executable, ROOT / 'tools/testing/z5157v-next-legacy/abi.py',
+         '--ndk', args.ndk, '--work', args.work / 'abi'], logs, 'uapi-abi')
     report['outputs'] = [check_arm_elf(path) for path in sorted(out.glob('*.so'))]
 
 
@@ -110,11 +155,11 @@ def main():
         args.ndk = args.ndk.resolve()
     logs = args.work / 'reports'
     logs.mkdir(exist_ok=True)
-    report = {'component': args.component, 'upstream_revision': REVISION,
+    report = {'component': args.component, 'userspace_revision': REVISION, 'kernel_revision': KERNEL_REVISION,
               'status': 'failed', 'device_tested': False, 'flashable_package': False}
     try:
         imported = json.loads((NEXT / 'UPSTREAM.json').read_text())
-        if imported['revision'] != REVISION:
+        if imported['revision'] != REVISION or imported['kernel']['revision'] != KERNEL_REVISION:
             raise RuntimeError('Unexpected upstream source revision')
         {'kernel': build_kernel, 'native': build_native, 'daemon': build_daemon}[args.component](args, logs, report)
         report['status'] = 'compiled'
@@ -127,7 +172,7 @@ def main():
         if summary:
             with open(summary, 'a') as stream:
                 stream.write(f"### v3.4.2 ARM32: {args.component}\n\nStatus: **{report['status']}**. "
-                             'Experimental component build only; no flashable package or device verification.\n')
+                             'Experimental build; no flashable package or device verification.\n')
     return 0 if report['status'] == 'compiled' else 1
 
 

@@ -8,16 +8,17 @@
 #include <linux/namei.h>
 #include <linux/proc_ns.h>
 #include <linux/pid.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
-#include <linux/sched.h>
-#else
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 #include <linux/sched/task.h>
 #endif
 #include <linux/slab.h>
 #include <linux/syscalls.h>
-#include <linux/task_work.h>
-#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 #include <uapi/linux/mount.h>
+#else
+#include <uapi/linux/fs.h>
+#endif
 
 #include "arch.h"
 #include "klog.h" // IWYU pragma: keep
@@ -74,7 +75,12 @@ try_setns:
         goto out;
     }
     struct path ns_path;
+#ifdef KSU_NS_GET_PATH_RETURNS_POINTER
+    void *ns_result = ns_get_path(&ns_path, pid1_task, &mntns_operations);
+    long ret = IS_ERR(ns_result) ? PTR_ERR(ns_result) : 0;
+#else
     long ret = ns_get_path(&ns_path, pid1_task, &mntns_operations);
+#endif
     put_task_struct(pid1_task);
     if (ret) {
         pr_warn("failed get path for init mount namespace: %ld\n", ret);
@@ -123,7 +129,7 @@ out:
 // individual mode , need CAP_SYS_ADMIN to perform unshare and remount
 static void ksu_mnt_ns_individual(void)
 {
-    long ret = ksys_unshare(CLONE_NEWNS);
+    long ret = ksu_sys_unshare(CLONE_NEWNS);
     if (ret) {
         pr_warn("call ksys_unshare failed: %ld\n", ret);
         return;

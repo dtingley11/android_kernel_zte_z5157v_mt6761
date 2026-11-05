@@ -4762,10 +4762,13 @@ CONFIG_ARCH_HAS_SG_CHAIN=y
 CONFIG_SBITMAP=y
 # CONFIG_VIRTUALIZATION is not set
 
-# Development build; this does not provide complete manual-hook support yet.
+# Experimental legacy manual-hook port; device testing is required.
 CONFIG_KSU_ARM32_EXPERIMENTAL=y
 CONFIG_KSU=y
 # CONFIG_KSU_DEBUG is not set
 # CONFIG_KSU_DISABLE_MANAGER is not set
 # CONFIG_KSU_DISABLE_POLICY is not set
 # CONFIG_KPROBES is not set
+CONFIG_KSU_MANUAL_HOOK=y
+# CONFIG_KSU_KPROBES_HOOK is not set
+# CONFIG_KSU_SYSCALL_TABLE_HOOK is not set
