@@ -56,18 +56,14 @@ extern int avc_ss_reset(u32 seqno);
 extern int avc_ss_reset(struct selinux_avc *avc, u32 seqno);
 #endif
 // reset avc cache table, otherwise the new rules will not take effect if already denied
-static void reset_avc_cache()
+static void reset_avc_cache(void)
 {
-	#if defined(KSU_COMPAT_USE_SELINUX_STATE)
-	u32 seqno = selinux_state.ss ? ++selinux_state.ss->latest_granting : 1;
-	#else
-	/* 4.9: no selinux_state; use a monotonic local seqno for AVC/policyload notifications */
-	static u32 ksu_avc_seqno = 1;
-	u32 seqno = ++ksu_avc_seqno;
-	#endif
-
-#if ((!defined(KSU_COMPAT_USE_SELINUX_STATE)) || \
-	LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
+#ifndef KSU_COMPAT_USE_SELINUX_STATE
+    /* The legacy security server owns the generation used in av_decision. */
+    security_ksu_policy_changed();
+#else
+    u32 seqno = selinux_state.ss ? ++selinux_state.ss->latest_granting : 1;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
     avc_ss_reset(seqno);
     selnl_notify_policyload(seqno);
     selinux_status_update_policyload(seqno);
@@ -78,6 +74,7 @@ static void reset_avc_cache()
     selinux_status_update_policyload(&selinux_state, seqno);
 #endif
     selinux_xfrm_notify_policyload();
+#endif
 }
 
 #ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS

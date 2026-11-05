@@ -100,6 +100,28 @@ int ss_initialized;
  */
 static u32 latest_granting;
 
+#ifdef CONFIG_KSU
+/*
+ * KSU edits policy in place. Use the security server's decision generation,
+ * as security_set_bools() does, so AVC and userspace policy-load listeners
+ * cannot advance beyond the sequence returned by security_compute_av().
+ */
+void security_ksu_policy_changed(void)
+{
+    u32 seqno;
+
+    write_lock_irq(&policy_rwlock);
+    seqno = ++latest_granting;
+    write_unlock_irq(&policy_rwlock);
+
+    avc_ss_reset(seqno);
+    selnl_notify_policyload(seqno);
+    selinux_status_update_policyload(seqno);
+    selinux_xfrm_notify_policyload();
+}
+#endif
+
+
 /* Forward declaration. */
 static int context_struct_to_string(struct context *context, char **scontext,
 				    u32 *scontext_len);

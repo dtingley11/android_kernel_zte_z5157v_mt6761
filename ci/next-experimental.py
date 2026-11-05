@@ -82,7 +82,8 @@ def build_kernel(args, logs, report):
     required = {'ksu_handle_execveat', 'ksu_handle_faccessat', 'ksu_handle_stat',
                 'ksu_handle_vfs_read', 'ksu_handle_input_handle_event',
                 'ksu_handle_sys_reboot', 'ksu_lsm_hook_init', 'ksu_handle_setresuid',
-                'ksu_install_file_wrapper', 'ksu_inode_init_security_anon_compat'}
+                'ksu_install_file_wrapper', 'ksu_inode_init_security_anon_compat',
+                'security_ksu_policy_changed'}
     if combined:
         required.update({'susfs_init', 'ksu_susfs_task_prctl', 'susfs_try_umount_all', 'susfs_set_ksu_sid'})
     if not required <= linked:

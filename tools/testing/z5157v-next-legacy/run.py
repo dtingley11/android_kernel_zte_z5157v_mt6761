@@ -58,3 +58,16 @@ subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-
                 '-Wno-misleading-indentation', '-I', str(a.work),
                 str(Path(__file__).with_name('susfs-control.c')), '-o', str(a.work / 'susfs-control')], check=True)
 subprocess.run([str(a.work / 'susfs-control')], check=True)
+
+server = (ROOT / 'security/selinux/ss/services.c').read_text()
+start = server.index('void security_ksu_policy_changed(')
+helper = server[start:server.index('\n#endif', start)]
+start = server.index('static void avd_init(')
+decision = server[start:server.index('\n}', start)+2]
+rules = (ROOT / 'KernelSU-Next/kernel/selinux/rules.c').read_text()
+start = rules.index('static void reset_avc_cache(')
+reset = rules[start:rules.index('\n#ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS', start)]
+(a.work / 'actual-policy-sequence.inc').write_text(helper + '\n' + decision + '\n' + reset)
+subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-I', str(a.work),
+                str(Path(__file__).with_name('policy-sequence.c')), '-o', str(a.work / 'policy-sequence')], check=True)
+subprocess.run([str(a.work / 'policy-sequence')], check=True)

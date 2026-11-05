@@ -39,6 +39,9 @@ use shared UAPI version 5.
   `file` class because the supplied Android 10 policy lacks `anon_inode` and denies
   unknown classes. SID transitions, context validation and CREATE permission
   checks remain enforced. Device validation is still required.
+- In-place policy changes advance the SELinux security-server generation before
+  notifying AVC, netlink and status-page listeners. A host regression check covers
+  repeated module updates and policy reloads.
 - Init services use the system-shell launcher needed for this device's nosuid
   `/data`, with the current `ksu` SELinux domain. Core and optional module RC
   appending account for partial copies and short reads.

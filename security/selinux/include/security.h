@@ -65,6 +65,10 @@ struct netlbl_lsm_secattr;
 
 extern int selinux_enabled;
 
+#ifdef CONFIG_KSU
+void security_ksu_policy_changed(void);
+#endif
+
 /* Policy capabilities */
 enum {
 	POLICYDB_CAPABILITY_NETPEER,
