@@ -1,8 +1,8 @@
-# Z5157V ADB install restore
+# Z5157V ADB install and uninstall restore
 
 Builds a root module for the reviewed Z5157V Android 10 firmware. It removes the
-production-build rejection in `PackageManagerShellCommand.runInstall()` while
-retaining APK signature, permission and session checks. Other commands and
+production-build rejections in `PackageManagerShellCommand.runInstall()` and
+`runUninstall()` while retaining APK signature, permission and session checks. Other commands and
 `ro.build.type` are unchanged.
 
 ```sh
@@ -10,9 +10,11 @@ adb pull /system/framework/services.jar services.jar
 python3 tools/zte-adb-install/build.py --services services.jar --out adb-install-module
 ```
 
-The builder requires the exact reviewed JAR checksum. It changes one two-byte
-DEX instruction, regenerates that DEX's checksums and leaves all other JAR
-entries unchanged. Firmware binaries are supplied locally and are not committed.
+The builder requires the exact reviewed JAR checksum. It changes two two-byte
+DEX instructions, regenerates that DEX's checksums and leaves all other JAR
+entries unchanged. Use the original JAR when rebuilding after v1 is active; the
+v2 installer accepts the original or v1-patched firmware. Firmware binaries are
+supplied locally and are not committed.
 
 Install the resulting ZIP as a KernelSU/Magisk module and reboot. Its early
 boot script bind-mounts the patched framework file; it does not write `/system`.

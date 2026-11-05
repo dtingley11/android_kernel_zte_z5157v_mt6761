@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a reversible Z5157V root module restoring the single-APK ADB command."""
+"""Build a reversible Z5157V root module restoring ADB install and uninstall."""
 import argparse
 import hashlib
 import json
@@ -43,7 +43,7 @@ def patch_dex(original):
     for item in table(88, 8):
         cls, proto, name = struct.unpack_from('<HHI', data, item)
         methods.append((types[cls], strings[name]))
-    target = methods.index((CLASS, 'runInstall'))
+    targets = {methods.index((CLASS, name)): name for name in ('runInstall', 'runUninstall')}
     check = methods.index((CLASS, 'isUserBuild'))
     classdata = None
     for item in table(96, 32):
@@ -56,41 +56,45 @@ def patch_dex(original):
         count, offset = uleb(data, offset); counts.append(count)
     for _ in range(counts[0] + counts[1]):
         _, offset = uleb(data, offset); _, offset = uleb(data, offset)
-    code = None
+    code_offsets = {}
     for count in counts[2:]:
         index = 0
         for _ in range(count):
             delta, offset = uleb(data, offset); index += delta
             _, offset = uleb(data, offset); code_offset, offset = uleb(data, offset)
-            if index == target: code = code_offset
-    if not code:
-        raise ValueError('runInstall code missing')
-    units = struct.unpack_from('<I', data, code + 12)[0]
-    start, end = code + 16, code + 16 + 2 * units
-    matches = []
-    for pos in range(start, end - 12, 2):
-        # invoke-direct isUserBuild; move-result vN; if-eqz vN, continue.
-        if data[pos] == 0x70 and struct.unpack_from('<H', data, pos + 2)[0] == check and data[pos + 6] == 0x0a:
-            register = data[pos + 7]
-            # OEM dex places const/4 vReturn, 1 between result and branch.
-            if (register < 16 and data[pos + 8] == 0x12 and data[pos + 9] >> 4 == 1
-                    and data[pos + 10] == 0x38 and data[pos + 11] == register
-                    and struct.unpack_from('<h', data, pos + 12)[0] == 3
-                    and data[pos + 14] == 0x0f and data[pos + 15] == data[pos + 9] & 15):
-                matches.append((pos + 6, register))
-    if len(matches) != 1:
-        raise ValueError(f'Expected one build-type check in runInstall, found {len(matches)}')
-    pos, register = matches[0]
-    before = bytes(data[pos:pos + 2])
-    # Same-size instruction: move-result vN -> const/4 vN, 0.
-    # All original install/session/signature/permission code remains in place.
-    data[pos:pos + 2] = bytes([0x12, register])
+            if index in targets: code_offsets[targets[index]] = code_offset
+    if set(code_offsets) != set(targets.values()):
+        raise ValueError('Install/uninstall command code missing')
+    changes = []
+    for name, code in code_offsets.items():
+        units = struct.unpack_from('<I', data, code + 12)[0]
+        start, end = code + 16, code + 16 + 2 * units
+        matches = []
+        for pos in range(start, end - 14, 2):
+            # invoke-direct or invoke-direct/range isUserBuild; move-result vN.
+            if data[pos] in (0x70, 0x76) and struct.unpack_from('<H', data, pos + 2)[0] == check and data[pos + 6] == 0x0a:
+                register = data[pos + 7]
+                # OEM dex places const/4 vReturn, 1 between result and branch.
+                if (register < 16 and data[pos + 8] == 0x12 and data[pos + 9] >> 4 == 1
+                        and data[pos + 10] == 0x38 and data[pos + 11] == register
+                        and struct.unpack_from('<h', data, pos + 12)[0] == 3
+                        and data[pos + 14] == 0x0f and data[pos + 15] == data[pos + 9] & 15):
+                    matches.append((pos + 6, register))
+        if len(matches) != 1:
+            raise ValueError(f'Expected one build-type check in {name}, found {len(matches)}')
+        pos, register = matches[0]
+        before = bytes(data[pos:pos + 2])
+        # Same-size instruction: move-result vN -> const/4 vN, 0.
+        # The original permission, signature and session checks remain in place.
+        data[pos:pos + 2] = bytes([0x12, register])
+        changes.append({'method': CLASS + '->' + name + '()I', 'dex_offset': pos,
+                        'before': before.hex(), 'after': bytes(data[pos:pos + 2]).hex()})
     data[12:32] = hashlib.sha1(data[32:]).digest()
     struct.pack_into('<I', data, 8, zlib.adler32(data[12:]))
     changed = [i for i in range(32, len(data)) if data[i] != original[i]]
-    assert changed and set(changed) <= {pos, pos + 1}
-    return bytes(data), {'method': CLASS + '->runInstall()I', 'dex_offset': pos,
-                         'before': before.hex(), 'after': bytes(data[pos:pos + 2]).hex()}
+    expected = {x['dex_offset'] for x in changes}
+    assert set(changed) == expected
+    return bytes(data), changes
 
 
 def main():
@@ -105,7 +109,7 @@ def main():
     with zipfile.ZipFile(a.services) as source, zipfile.ZipFile(jar, 'w') as target:
         for info in source.infolist():
             content = source.read(info.filename)
-            if info.filename == 'classes.dex': content, change = patch_dex(content)
+            if info.filename == 'classes.dex': content, changes = patch_dex(content)
             target.writestr(info, content)
     with zipfile.ZipFile(jar) as patched, zipfile.ZipFile(a.services) as source:
         assert patched.testzip() is None
@@ -114,13 +118,13 @@ def main():
             if name != 'classes.dex': assert source.read(name) == patched.read(name)
     digest = hashlib.sha256(jar.read_bytes()).hexdigest()
     report = {'original_services_sha256': ORIGINAL_SHA256, 'patched_services_sha256': digest,
-              'change': change, 'device_applied': False, 'reboot_tested': False}
+              'changes': changes, 'device_applied': False, 'reboot_tested': False}
     prop = '''id=zte_adb_install_restore
-name=Z5157V ADB Install Restore
-version=1
-versionCode=1
+name=Z5157V ADB Install and Uninstall Restore
+version=2
+versionCode=2
 author=dtingley11
-description=Restores single-APK ADB installation on Z5157V Android 10.
+description=Restores ADB installation and uninstallation on Z5157V Android 10.
 '''
     customize = '''#!/system/bin/sh
 SKIPUNZIP=0
@@ -128,12 +132,12 @@ SKIPUNZIP=0
 current=$(sha256sum /system/framework/services.jar)
 current=${current%% *}
 case "$current" in
-  @ORIGINAL@|@PATCHED@) ;;
+  @ORIGINAL@|9b2594cb6959d41acef5c32153d94563a4cd08e7b046a3f87c77154267641e4b|@PATCHED@) ;;
   *) abort "services.jar differs from the reviewed Z5157V firmware" ;;
 esac
 set_perm "$MODPATH/services.jar" 0 0 0644 u:object_r:system_file:s0
 set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
-ui_print "Single-APK ADB install check patched; reboot to apply"
+ui_print "ADB install/uninstall checks patched; reboot to apply"
 '''.replace('@ORIGINAL@', ORIGINAL_SHA256).replace('@PATCHED@', digest)
     boot = '''#!/system/bin/sh
 # Bind only this framework file; removal/disable restores it on the next boot.
@@ -142,7 +146,7 @@ MODDIR=${0%/*}
 chcon u:object_r:system_file:s0 "$MODDIR/services.jar" || exit 1
 mount -o bind "$MODDIR/services.jar" /system/framework/services.jar
 '''
-    archive = a.out / 'Z5157V-ADB-Install-Restore-v1.zip'
+    archive = a.out / 'Z5157V-ADB-Install-Uninstall-Restore-v2.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as stream:
         for name, value, mode in [('module.prop', prop.encode(), 0o644), ('customize.sh', customize.encode(), 0o755),
                                   ('post-fs-data.sh', boot.encode(), 0o755), ('services.jar', jar.read_bytes(), 0o644),
