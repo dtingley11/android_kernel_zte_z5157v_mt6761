@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Compare ARM32 shared-UAPI values and layouts with pinned v3.4.2."""
 import argparse
+import difflib
 import hashlib
 import json
 from pathlib import Path
 import re
 import struct
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 REVISION = '4c706b5938665866ebe16944a481a7b91e3396af'
@@ -19,6 +21,12 @@ a = p.parse_args()
 a.work = a.work.resolve(); a.work.mkdir(parents=True, exist_ok=True)
 bins = a.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin'
 baseline_path = Path(__file__).with_name('abi-v3.4.2-arm32.json')
+
+def normalize_layout(layout):
+    # Clang names anonymous NDK records by their absolute header location.
+    # Keep the header, line, column and complete layout; discard only the
+    # installation prefix, which differs between local and CI toolchains.
+    return re.sub(r'(?<= at )[^)\n]*/sysroot/', '<ndk>/sysroot/', layout)
 
 def inspect(headers, names, records, label):
     source = a.work / (label + '.cc')
@@ -33,7 +41,7 @@ def inspect(headers, names, records, label):
     subprocess.run([str(bins / 'llvm-objcopy'), '-O', 'binary', '--only-section=.data', str(obj), str(raw)], check=True)
     values = struct.unpack('<' + 'Q' * len(expressions), raw.read_bytes())
     layout = result.stdout.split('*** Dumping IRgen Record Layout')[0].replace(str(headers), '<source>')
-    return {'values': list(values), 'record_layouts': layout}
+    return {'values': list(values), 'record_layouts': normalize_layout(layout)}
 
 if a.upstream:
     headers = a.work / 'upstream'; (headers / 'uapi').mkdir(parents=True, exist_ok=True)
@@ -57,6 +65,11 @@ else:
 assert baseline['revision'] == REVISION
 actual = inspect(ROOT / 'KernelSU-Next', baseline['constants'], baseline['records'], 'ported')
 assert actual['values'] == baseline['values'], 'UAPI constant values, widths, sizes or alignments differ'
+if actual['record_layouts'] != baseline['record_layouts']:
+    sys.stderr.writelines(difflib.unified_diff(
+        baseline['record_layouts'].splitlines(keepends=True),
+        actual['record_layouts'].splitlines(keepends=True),
+        fromfile='upstream ARM32 layout', tofile='ported ARM32 layout'))
 assert actual['record_layouts'] == baseline['record_layouts'], 'UAPI member offsets or record layouts differ'
 if a.gcc:
     source = a.work / 'kernel-abi.c'
