@@ -67,7 +67,8 @@ def main():
             hashlib.sha256(p.read_bytes()).hexdigest() + "  " + str(p.relative_to(stage)) + "\n"
             for p in files))
         manager_suffix = "-android10-manager" if report.get("manager") else ""
-        archive = reports / f"AnyKernel3-Z5157V-{args.variant}-{report['kernel_revision'][:9]}{manager_suffix}.zip"
+        init_suffix = "-init-rc" if report.get("init_rc_proxy_upstream_revision") else ""
+        archive = reports / f"AnyKernel3-Z5157V-{args.variant}-{report['kernel_revision'][:9]}{manager_suffix}{init_suffix}.zip"
         temporary = work / "anykernel-package.zip"
         with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as stream:
             for path in sorted(stage.rglob("*")):

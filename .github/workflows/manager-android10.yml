@@ -2,7 +2,7 @@ name: Z5157V Android 10 manager and kernels
 
 on:
   push:
-    branches: [ksu-v108-android10-manager]
+    branches: [ksu-v108-android10-manager, ksu-v108-module-startup]
   workflow_dispatch:
 
 permissions:
@@ -40,6 +40,8 @@ jobs:
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install
           'platforms;android-36' 'build-tools;35.0.0' 'ndk;28.1.13356709' 'cmake;3.22.1'
+      - name: Test init.rc read proxies
+        run: python3 tools/testing/z5157v-init-rc/run.py --work "$RUNNER_TEMP/init-rc-test"
       - name: Restore manager signing key
         env:
           MANAGER_KEYSTORE_B64: ${{ secrets.Z5157V_MANAGER_KEYSTORE_B64 }}
@@ -60,6 +62,10 @@ jobs:
         run: >-
           python3 ci/manager.py --work "$MANAGER_WORK"
           --keystore "$RUNNER_TEMP/z5157v-manager.p12"
+      - name: Build ARM32 SUSFS module
+        run: >-
+          python3 ci/susfs-module.py --work "$RUNNER_TEMP/susfs-module-arm32"
+          --out "$MANAGER_WORK/reports" --ndk "$ANDROID_HOME/ndk/28.1.13356709"
       - name: Upload manager and build reports
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

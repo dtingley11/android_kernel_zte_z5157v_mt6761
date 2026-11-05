@@ -18,6 +18,7 @@
 #include <linux/printk.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/uio.h>
 #include <linux/workqueue.h>
 
 #include "allowlist.h"
@@ -286,130 +287,110 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 	return 0;
 }
 
+/*
+ * Init-rc EOF appending backported from KernelSU Next legacy
+ * b933b1f728116a456fbebf27b6a8772a640cdf23, runtime/ksud_integration.c.
+ * Keep v1.0.8's commands and source-hook ABI. Custom module-rc loading from
+ * newer Next is not needed here. Partial-copy accounting follows read(2).
+ */
 static ssize_t (*orig_read)(struct file *, char __user *, size_t, loff_t *);
 static ssize_t (*orig_read_iter)(struct kiocb *, struct iov_iter *);
 static struct file_operations fops_proxy;
-static ssize_t read_count_append = 0;
+static size_t ksu_rc_pos;
+static const size_t ksu_rc_len = sizeof(KERNEL_SU_RC) - 1;
 
 static ssize_t read_proxy(struct file *file, char __user *buf, size_t count,
-			  loff_t *pos)
+                          loff_t *pos)
 {
-	bool first_read = file->f_pos == 0;
-	ssize_t ret = orig_read(file, buf, count, pos);
-	if (first_read) {
-		pr_info("read_proxy append %zd + %zd\n", ret,
-			read_count_append);
-		ret += read_count_append;
-	}
-	return ret;
+    ssize_t ret;
+    size_t bytes, copied;
+
+    if (!count)
+        return 0;
+    if (!ksu_rc_pos) {
+        ret = orig_read(file, buf, count, pos);
+        if (ret)
+            return ret;
+    }
+    if (ksu_rc_pos >= ksu_rc_len)
+        return 0;
+    bytes = min(count, ksu_rc_len - ksu_rc_pos);
+    copied = bytes - copy_to_user(buf, KERNEL_SU_RC + ksu_rc_pos, bytes);
+    if (!copied)
+        return -EFAULT;
+    ksu_rc_pos += copied;
+    return copied;
 }
 
 static ssize_t read_iter_proxy(struct kiocb *iocb, struct iov_iter *to)
 {
-	bool first_read = iocb->ki_pos == 0;
-	ssize_t ret = orig_read_iter(iocb, to);
-	if (first_read) {
-		pr_info("read_iter_proxy append %zd + %zd\n", ret,
-			read_count_append);
-		ret += read_count_append;
-	}
-	return ret;
+    ssize_t ret;
+    size_t copied;
+
+    if (!iov_iter_count(to))
+        return 0;
+    if (!ksu_rc_pos) {
+        ret = orig_read_iter(iocb, to);
+        if (ret)
+            return ret;
+    }
+    if (ksu_rc_pos >= ksu_rc_len)
+        return 0;
+    copied = copy_to_iter(KERNEL_SU_RC + ksu_rc_pos,
+                          ksu_rc_len - ksu_rc_pos, to);
+    if (!copied)
+        return -EFAULT;
+    ksu_rc_pos += copied;
+    return copied;
+}
+
+static bool is_init_rc(struct file *file)
+{
+    char path[256];
+    char *name;
+
+    if (strcmp(current->comm, "init") || IS_ERR_OR_NULL(file))
+        return false;
+    if (!S_ISREG(file_inode(file)->i_mode) ||
+        strcmp(file->f_path.dentry->d_name.name, "init.rc"))
+        return false;
+    name = d_path(&file->f_path, path, sizeof(path));
+    if (IS_ERR(name))
+        return false;
+    return !strcmp(name, "/init.rc") ||
+           !strcmp(name, "/system/etc/init/hw/init.rc");
 }
 
 int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
-			size_t *count_ptr, loff_t **pos)
+                       size_t *count_ptr, loff_t **pos)
 {
-#ifndef CONFIG_KSU_KPROBES_HOOK
-	if (!ksu_vfs_read_hook) {
-		return 0;
-	}
-#endif
-	struct file *file;
-	char __user *buf;
-	size_t count;
+    static bool rc_hooked;
+    struct file *file;
 
-	if (strcmp(current->comm, "init")) {
-		// we are only interest in `init` process
-		return 0;
-	}
+    if (!ksu_vfs_read_hook || !file_ptr)
+        return 0;
+    file = *file_ptr;
+    if (!is_init_rc(file))
+        return 0;
+    if (READ_ONCE(rc_hooked)) {
+        stop_vfs_read_hook();
+        return 0;
+    }
+    if (!file->f_op->read && !file->f_op->read_iter)
+        return 0;
 
-	file = *file_ptr;
-	if (IS_ERR(file)) {
-		return 0;
-	}
-
-	if (!S_ISREG(file->f_path.dentry->d_inode->i_mode)) {
-		return 0;
-	}
-
-	const char *short_name = file->f_path.dentry->d_name.name;
-	if (strcmp(short_name, "atrace.rc")) {
-		// we are only interest `atrace.rc` file name file
-		return 0;
-	}
-	char path[256];
-	char *dpath = d_path(&file->f_path, path, sizeof(path));
-
-	if (IS_ERR(dpath)) {
-		return 0;
-	}
-
-	if (strcmp(dpath, "/system/etc/init/atrace.rc")) {
-		return 0;
-	}
-
-	// we only process the first read
-	static bool rc_inserted = false;
-	if (rc_inserted) {
-		// we don't need this kprobe, unregister it!
-		stop_vfs_read_hook();
-		return 0;
-	}
-	rc_inserted = true;
-
-	// now we can sure that the init process is reading
-	// `/system/etc/init/atrace.rc`
-	buf = *buf_ptr;
-	count = *count_ptr;
-
-	size_t rc_count = strlen(KERNEL_SU_RC);
-
-	pr_info("vfs_read: %s, comm: %s, count: %zu, rc_count: %zu\n", dpath,
-		current->comm, count, rc_count);
-
-	if (count < rc_count) {
-		pr_err("count: %zu < rc_count: %zu\n", count, rc_count);
-		return 0;
-	}
-
-	size_t ret = copy_to_user(buf, KERNEL_SU_RC, rc_count);
-	if (ret) {
-		pr_err("copy ksud.rc failed: %zu\n", ret);
-		return 0;
-	}
-
-	// we've succeed to insert ksud.rc, now we need to proxy the read and modify the result!
-	// But, we can not modify the file_operations directly, because it's in read-only memory.
-	// We just replace the whole file_operations with a proxy one.
-	memcpy(&fops_proxy, file->f_op, sizeof(struct file_operations));
-	orig_read = file->f_op->read;
-	if (orig_read) {
-		fops_proxy.read = read_proxy;
-	}
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
-	orig_read_iter = file->f_op->read_iter;
-	if (orig_read_iter) {
-		fops_proxy.read_iter = read_iter_proxy;
-	}
-#endif
-	// replace the file_operations
-	file->f_op = &fops_proxy;
-	read_count_append = rc_count;
-
-	*buf_ptr = buf + rc_count;
-	*count_ptr = count - rc_count;
-
-	return 0;
+    memcpy(&fops_proxy, file->f_op, sizeof(fops_proxy));
+    orig_read = file->f_op->read;
+    orig_read_iter = file->f_op->read_iter;
+    if (orig_read)
+        fops_proxy.read = read_proxy;
+    if (orig_read_iter)
+        fops_proxy.read_iter = read_iter_proxy;
+    file->f_op = &fops_proxy;
+    WRITE_ONCE(rc_hooked, true);
+    pr_info("init rc proxy installed, comm: %s, rc_count: %zu\n",
+            current->comm, ksu_rc_len);
+    return 0;
 }
 
 int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr,
