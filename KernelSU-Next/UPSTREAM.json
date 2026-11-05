@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/KernelSU-Next/KernelSU-Next",
+  "tag": "v3.4.2",
+  "revision": "4c706b5938665866ebe16944a481a7b91e3396af",
+  "status": "experimental ARM32/Linux 4.9 port; not boot verified",
+  "arm32_assets": [
+    {
+      "path": "userspace/ksud/bin/arm/busybox",
+      "source_revision": "9d9f9ed5d5f3a66a2f44e24c926075554f9275ce",
+      "source_path": "userspace/ksud_magic/bin/arm/busybox",
+      "sha256": "6fa270197894b4963a08fd34d5ef12d38eb37784e29b1e4fd07249b665cd30d0"
+    }
+  ]
+}

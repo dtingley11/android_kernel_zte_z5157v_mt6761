@@ -1,0 +1,68 @@
+{
+  "upstream_tag": "v3.4.2",
+  "upstream_revision": "4c706b5938665866ebe16944a481a7b91e3396af",
+  "components": {
+    "kernel": {
+      "component": "kernel",
+      "upstream_revision": "4c706b5938665866ebe16944a481a7b91e3396af",
+      "status": "failed",
+      "device_tested": false,
+      "flashable_package": false,
+      "toolchain_revision": "c348b64ea1e2015a576485aa787dc70dda9ef396",
+      "configuration_checks": {
+        "KSU": "y",
+        "KSU_ARM32_EXPERIMENTAL": "y",
+        "KPROBES": "n",
+        "SECURITY_SELINUX": "y",
+        "SECURITY_SELINUX_BOOTPARAM_VALUE": "1",
+        "MODULE_SIG_FORCE": "y"
+      },
+      "error": "kernel-objects failed with exit status 2"
+    },
+    "native": {
+      "component": "native",
+      "upstream_revision": "4c706b5938665866ebe16944a481a7b91e3396af",
+      "status": "compiled",
+      "device_tested": false,
+      "flashable_package": false,
+      "outputs": [
+        {
+          "file": "libadbroot.so",
+          "sha256": "29c4ffacd27bf7c7a7434c5bde2565b26ae9ec160e068a8c00be67153c18caea",
+          "elf": "ARM32"
+        },
+        {
+          "file": "libkernelsu.so",
+          "sha256": "717b810dcd104a16d60bebba6f02fadf08269908749413249f7041046993efc3",
+          "elf": "ARM32"
+        }
+      ]
+    },
+    "daemon": {
+      "component": "daemon",
+      "upstream_revision": "4c706b5938665866ebe16944a481a7b91e3396af",
+      "status": "compiled",
+      "device_tested": false,
+      "flashable_package": false,
+      "outputs": [
+        {
+          "file": "ksud",
+          "sha256": "d004b216dba95d1708c33c813c7f05236b4bee2e5a050b080360ff820e6b2820",
+          "elf": "ARM32"
+        }
+      ]
+    },
+    "manager_apk": {
+      "status": "compiled",
+      "file": "KernelSU_Next_v3.4.2-arm32-experimental_33355-debug.apk",
+      "sha256": "d1685cbe3ca31f12c7898844171486793d21e774646563dce4abe308f386d3ef",
+      "abi": "armeabi-v7a",
+      "min_sdk": 26,
+      "signature": "APK v2; debug certificate",
+      "daemon_matches_ndk_stripped_build": true,
+      "device_installed": false,
+      "device_root_verified": false
+    }
+  },
+  "flashable_package": false
+}

@@ -181,3 +181,5 @@ obj-$(CONFIG_TRUSTY)	+= trusty/
 
 obj-$(CONFIG_VENDOR_COMMON_COMPILE)	+= vendor/common/
 obj-$(CONFIG_VENDOR_SOC_MTK_COMPILE)	+= vendor/soc/mediatek/
+
+obj-$(CONFIG_KSU) += ../KernelSU-Next/kernel/

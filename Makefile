@@ -1137,6 +1137,13 @@ prepare0: archprepare gcc-plugins
 # All the preparing..
 prepare: prepare0 prepare-objtool
 
+ifeq ($(CONFIG_KSU),y)
+PHONY += ksu-selinux-headers
+prepare: ksu-selinux-headers
+ksu-selinux-headers: prepare0 scripts
+	$(Q)$(MAKE) $(build)=security/selinux security/selinux/flask.h
+endif
+
 ifdef CONFIG_STACK_VALIDATION
   has_libelf := $(call try-run,\
 		echo "int main() {}" | $(HOSTCC) -xc -o /dev/null -lelf -,1,0)

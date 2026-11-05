@@ -1,0 +1,49 @@
+name: KernelSU Next v3.4.2 ARM32 experiment
+
+on:
+  push:
+    branches: [ksu-next-v3.4.2-arm32-experimental]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  components:
+    name: ${{ matrix.component }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [kernel, native, daemon]
+    env:
+      EXPERIMENT_WORK: ${{ github.workspace }}/../next-arm32-${{ matrix.component }}
+      RUSTUP_TOOLCHAIN: 1.99.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install kernel build tools
+        if: matrix.component == 'kernel'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex libelf-dev libssl-dev libncurses-dev python-is-python3
+      - name: Install Android NDK
+        if: matrix.component != 'kernel'
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;29.0.14206865'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Install Rust ARM32 target
+        if: matrix.component == 'daemon'
+        run: rustup toolchain install 1.99.1 --profile minimal --target armv7-linux-androideabi
+      - name: Compile experimental component
+        run: python3 ci/next-experimental.py '${{ matrix.component }}' --work "$EXPERIMENT_WORK"
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: next-arm32-${{ matrix.component }}-${{ github.run_id }}
+          path: ${{ env.EXPERIMENT_WORK }}/reports/
+          if-no-files-found: warn
+          retention-days: 14
